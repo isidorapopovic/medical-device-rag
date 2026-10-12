@@ -1,0 +1,21 @@
+{
+  "assessed_requirements_in_graph": 2,
+  "requirements_with_cited_evidence": 1,
+  "requirements_without_cited_evidence": 1,
+  "citation_coverage_fraction": 0.5,
+  "unique_device_evidence_chunks": 1,
+  "unique_device_documents_cited": 1,
+  "verified_requirement_to_evidence_edges": 1,
+  "missing_citation_references": [],
+  "status_counts": {
+    "partial": 1,
+    "not_found": 1
+  },
+  "partial_review": false,
+  "human_validated": false,
+  "warning": "This graph records citations in LLM findings, not proof that evidence satisfies requirements. The coverage fraction is NOT a regulatory compliance score.",
+  "visualization_shows": 2,
+  "visualization_omits": 0,
+  "synthetic_demonstration_only": true,
+  "warning_example": "FICTIONAL DATA. NOT calculated from any uploaded MDR or medical device. NOT a compliance evaluation."
+}

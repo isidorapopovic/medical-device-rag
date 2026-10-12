@@ -1,0 +1,18 @@
+[
+  {
+    "id": "Q1_REPLACE",
+    "query": "REPLACE WITH A SPECIFIC QUESTION ABOUT YOUR UPLOADED MDR",
+    "kind": "legal",
+    "relevant": [
+      {"source": "legal/REPLACE_WITH_YOUR_MDR_FILENAME.pdf", "page": 1}
+    ]
+  },
+  {
+    "id": "Q2_REPLACE",
+    "query": "REPLACE WITH A QUESTION ABOUT DEVICE RISK DOCUMENTATION",
+    "kind": "device",
+    "relevant": [
+      {"source": "device/REPLACE_WITH_ACTUAL_DEVICE_FILENAME.pdf", "page": 1}
+    ]
+  }
+]

@@ -1,0 +1,71 @@
+{
+  "n_embeddings": 6,
+  "dimension": 3,
+  "corpus_counts": {
+    "legal": 3,
+    "device": 3
+  },
+  "near_duplicate_threshold": 0.98,
+  "near_duplicate_scan_first_n": 6,
+  "near_duplicate_pairs_found_in_scan": 2,
+  "top_near_duplicate_pairs": [
+    {
+      "chunk_a": "L-0",
+      "chunk_b": "L-1",
+      "cosine_similarity": 0.98714
+    },
+    {
+      "chunk_a": "D-1",
+      "chunk_b": "D-2",
+      "cosine_similarity": 0.98086
+    }
+  ],
+  "warning": "Cosine and 2D proximity are not evidence of regulatory conformity.",
+  "pca_explained_variance_ratio": [
+    0.9444,
+    0.049
+  ],
+  "pca_2d_total_explained_variance": 0.9934,
+  "query": "Example risk management",
+  "query_nearest_by_cosine_in_sample": [
+    {
+      "id": "L-1",
+      "source": "legal/demo.pdf",
+      "page": "2",
+      "cosine_similarity": 0.9866
+    },
+    {
+      "id": "L-2",
+      "source": "legal/demo.pdf",
+      "page": "3",
+      "cosine_similarity": 0.9863
+    },
+    {
+      "id": "L-0",
+      "source": "legal/demo.pdf",
+      "page": "1",
+      "cosine_similarity": 0.9703
+    },
+    {
+      "id": "D-2",
+      "source": "device/demo.pdf",
+      "page": "3",
+      "cosine_similarity": 0.5123
+    },
+    {
+      "id": "D-1",
+      "source": "device/demo.pdf",
+      "page": "2",
+      "cosine_similarity": 0.3471
+    },
+    {
+      "id": "D-0",
+      "source": "device/demo.pdf",
+      "page": "1",
+      "cosine_similarity": 0.2428
+    }
+  ],
+  "sampling_note": "Random deterministic subset 6 of 6 indexed chunks",
+  "synthetic_demonstration_only": true,
+  "warning_example": "FICTIONAL DATA. NOT calculated from any uploaded MDR or medical device. NOT a compliance evaluation."
+}

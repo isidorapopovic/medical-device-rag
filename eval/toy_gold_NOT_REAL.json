@@ -1,0 +1,1 @@
+[{"id": "TOY-1", "query": "risk management", "kind": "legal", "relevant": [{"source": "legal/demo.pdf", "page": 1}, {"source": "legal/demo.pdf", "page": 3}]}, {"id": "TOY-2", "query": "risk management", "kind": "device", "relevant": [{"source": "device/demo.pdf", "page": 3}]}]

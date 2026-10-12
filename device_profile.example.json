@@ -1,0 +1,13 @@
+{
+  "device_name": "EXAMPLE - replace with your actual device",
+  "intended_purpose": "Describe medical purpose in precise terms",
+  "device_description": "Describe technology and key functions",
+  "risk_class": "UNKNOWN - to be verified",
+  "sterile": "UNKNOWN",
+  "implantable": "UNKNOWN",
+  "software": "UNKNOWN",
+  "active_device": "UNKNOWN",
+  "target_market": "European Union",
+  "manufacturing_role": "UNKNOWN",
+  "notes": "All profile fields are user assertions, not verified legal determinations."
+}

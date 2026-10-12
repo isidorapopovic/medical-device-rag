@@ -1,0 +1,19 @@
+openai>=1.90,<3
+ollama>=0.6,<1
+google-genai>=2.29,<3
+certifi>=2025.1.31
+pypdf>=6,<7
+chromadb>=1.0,<2
+PyMuPDF>=1.25,<2
+python-docx>=1.1,<2
+python-dotenv>=1.0,<2
+pydantic>=2.8,<3
+rank-bm25>=0.2.2,<1
+pytest>=8,<10
+# RAG evaluation and HTML visualizations
+numpy>=1.26,<3
+scikit-learn>=1.5,<2
+plotly>=5.24,<7
+pandas>=2.2,<4
+networkx>=3.2,<4
+streamlit>=1.40,<2

@@ -1,0 +1,712 @@
+{
+  "generated_at_utc": "2026-10-11T20:34:56.433906+00:00",
+  "gold_file": "/mnt/data/mdr_regulatory_rag_v2/eval/gold_example_SMOCK.json",
+  "n_questions": 2,
+  "n_legal_questions": 1,
+  "n_device_questions": 1,
+  "embedding_model": "example-stub",
+  "indexed_sources_sha256": {
+    "legal/demo.pdf": "TEST ONLY",
+    "device/demo.pdf": "TEST ONLY"
+  },
+  "k_values": [
+    1,
+    2,
+    3
+  ],
+  "average_metrics": [
+    {
+      "method": "dense",
+      "k": 1,
+      "questions": 2,
+      "precision": 0.5,
+      "recall": 0.25,
+      "hit_rate": 0.5,
+      "mrr": 0.5,
+      "ndcg": 0.5
+    },
+    {
+      "method": "dense",
+      "k": 2,
+      "questions": 2,
+      "precision": 0.25,
+      "recall": 0.25,
+      "hit_rate": 0.5,
+      "mrr": 0.5,
+      "ndcg": 0.30657
+    },
+    {
+      "method": "dense",
+      "k": 3,
+      "questions": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.66667,
+      "ndcg": 0.70986
+    },
+    {
+      "method": "bm25",
+      "k": 1,
+      "questions": 2,
+      "precision": 0.5,
+      "recall": 0.25,
+      "hit_rate": 0.5,
+      "mrr": 0.5,
+      "ndcg": 0.5
+    },
+    {
+      "method": "bm25",
+      "k": 2,
+      "questions": 2,
+      "precision": 0.75,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.75,
+      "ndcg": 0.81546
+    },
+    {
+      "method": "bm25",
+      "k": 3,
+      "questions": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.75,
+      "ndcg": 0.81546
+    },
+    {
+      "method": "hybrid",
+      "k": 1,
+      "questions": 2,
+      "precision": 0.5,
+      "recall": 0.25,
+      "hit_rate": 0.5,
+      "mrr": 0.5,
+      "ndcg": 0.5
+    },
+    {
+      "method": "hybrid",
+      "k": 2,
+      "questions": 2,
+      "precision": 0.75,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.75,
+      "ndcg": 0.81546
+    },
+    {
+      "method": "hybrid",
+      "k": 3,
+      "questions": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.75,
+      "ndcg": 0.81546
+    }
+  ],
+  "per_query": [
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "dense",
+      "k": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ],
+      "missed_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "dense",
+      "k": 2,
+      "precision": 0.5,
+      "recall": 0.5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 0.6131471927654584,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ],
+      "missed_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "l2",
+          "source": "legal/demo.pdf",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "dense",
+      "k": 3,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 0.9197207891481876,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "l2",
+          "source": "legal/demo.pdf",
+          "page": 2
+        },
+        {
+          "id": "l3",
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "bm25",
+      "k": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ],
+      "missed_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "bm25",
+      "k": 2,
+      "precision": 1.0,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "l3",
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "bm25",
+      "k": 3,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "l3",
+          "source": "legal/demo.pdf",
+          "page": 3
+        },
+        {
+          "id": "l2",
+          "source": "legal/demo.pdf",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "hybrid",
+      "k": 1,
+      "precision": 1.0,
+      "recall": 0.5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ],
+      "missed_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "hybrid",
+      "k": 2,
+      "precision": 1.0,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "l3",
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-1",
+      "question": "risk management",
+      "kind": "legal",
+      "method": "hybrid",
+      "k": 3,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "ndcg": 1.0,
+      "found_labels": [
+        {
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "source": "legal/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "l1",
+          "source": "legal/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "l3",
+          "source": "legal/demo.pdf",
+          "page": 3
+        },
+        {
+          "id": "l2",
+          "source": "legal/demo.pdf",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "dense",
+      "k": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "hit_rate": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "found_labels": [],
+      "missed_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "dense",
+      "k": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "hit_rate": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "found_labels": [],
+      "missed_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "d2",
+          "source": "device/demo.pdf",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "dense",
+      "k": 3,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.3333333333333333,
+      "ndcg": 0.5,
+      "found_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "d2",
+          "source": "device/demo.pdf",
+          "page": 2
+        },
+        {
+          "id": "d3",
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "bm25",
+      "k": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "hit_rate": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "found_labels": [],
+      "missed_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "bm25",
+      "k": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.5,
+      "ndcg": 0.6309297535714575,
+      "found_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "d3",
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "bm25",
+      "k": 3,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.5,
+      "ndcg": 0.6309297535714575,
+      "found_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "d3",
+          "source": "device/demo.pdf",
+          "page": 3
+        },
+        {
+          "id": "d2",
+          "source": "device/demo.pdf",
+          "page": 2
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "hybrid",
+      "k": 1,
+      "precision": 0.0,
+      "recall": 0.0,
+      "hit_rate": 0.0,
+      "mrr": 0.0,
+      "ndcg": 0.0,
+      "found_labels": [],
+      "missed_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "hybrid",
+      "k": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.5,
+      "ndcg": 0.6309297535714575,
+      "found_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "d3",
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ]
+    },
+    {
+      "query_id": "TOY-2",
+      "question": "risk management",
+      "kind": "device",
+      "method": "hybrid",
+      "k": 3,
+      "precision": 0.3333333333333333,
+      "recall": 1.0,
+      "hit_rate": 1.0,
+      "mrr": 0.5,
+      "ndcg": 0.6309297535714575,
+      "found_labels": [
+        {
+          "source": "device/demo.pdf",
+          "page": 3
+        }
+      ],
+      "missed_labels": [],
+      "retrieved": [
+        {
+          "id": "d1",
+          "source": "device/demo.pdf",
+          "page": 1
+        },
+        {
+          "id": "d3",
+          "source": "device/demo.pdf",
+          "page": 3
+        },
+        {
+          "id": "d2",
+          "source": "device/demo.pdf",
+          "page": 2
+        }
+      ]
+    }
+  ],
+  "interpretation": "Ground-truth retrieval benchmark only. Does not measure answer faithfulness, legal completeness, safety, or compliance. Gold labels need human validation.",
+  "synthetic_demonstration_only": true,
+  "warning_example": "FICTIONAL DATA. NOT calculated from any uploaded MDR or medical device. NOT a compliance evaluation."
+}
