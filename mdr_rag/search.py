@@ -58,10 +58,10 @@ def _tokens(text: str) -> list[str]:
     return re.findall(r"\b\w{2,}\b", text.casefold())
 
 
-def rerank_passages(query: str, passages: list[dict]) -> list[dict]:
+def _llm_rerank(query: str, passages: list[dict]) -> dict:
     """Locally rerank a candidate set with the configured Ollama chat model."""
     if not passages:
-        return []
+        return {"passages": [], "diagnostics": {"backend": "llm", "scores": []}}
 
     import ollama
 
@@ -113,22 +113,36 @@ def rerank_passages(query: str, passages: list[dict]) -> list[dict]:
         if trace is not None:
             recorder.finish(trace, "failed")
         raise
+    from .reranking import reranker_identity, scored_copies, publish, digest
+    try:
+        scores = [{"id": item.source_id, "score": item.score} for item in ranked.scores]
+        sorted_passages = scored_copies(passages, scores)
+        score_by_id = {item["id"]: item["score"] for item in scores}
+        diagnostics = {"backend": "llm", "identity": reranker_identity("llm"), "query": query,
+            "query_sha256": digest(query), "scores": [{"id": p["id"], "score": score_by_id[p["id"]],
+                "start": 0, "end": len(p["text"]), "visibility": "submitted_text_token_visibility_unverified",
+                "passage_truncated": None, "query_truncated": None} for p in passages]}
+    except Exception:
+        if trace is not None:
+            recorder.finish(trace, "failed")
+        raise
     if trace is not None:
+        trace.rerank = diagnostics
         recorder.finish(trace)
+    publish(diagnostics)
+    return {"passages": sorted_passages, "diagnostics": diagnostics}
 
-    score_by_id = {item.source_id: item.score for item in ranked.scores}
-    original_order = {source_id: index for index, source_id in enumerate(source_ids)}
-    return sorted(
-        passages,
-        key=lambda passage: (-score_by_id[passage["id"]], original_order[passage["id"]]),
-    )
+
+def rerank_passages(query: str, passages: list[dict], backend=None) -> list[dict]:
+    """Legacy direct calls select LLM unless an explicit/env backend is supplied."""
+    from .reranking import rerank_candidates, active_backend
+    selected = backend or active_backend() or os.getenv("RERANK_BACKEND", "").strip() or "llm"
+    return rerank_candidates(query, passages, backend=selected)["passages"]
 
 
 def reranking_enabled() -> bool:
-    value = os.getenv("RERANK_ENABLED", "false").casefold()
-    if value not in {"true", "false"}:
-        raise ValueError("RERANK_ENABLED must be 'true' or 'false'")
-    return value == "true"
+    from .reranking import backend_selection
+    return backend_selection() != "none"
 
 
 def hybrid_search(
@@ -137,16 +151,17 @@ def hybrid_search(
     k: int = 7,
     mode: str | None = None,
     rerank: bool | None = None,
+    backend: str | None = None,
 ) -> list[dict]:
     """Compatibility single-query interface over the shared candidate API."""
-    return retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank)["passages"]
+    return retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank, backend=backend)["passages"]
 
 
 _BM25_CACHE = {}
 
 
 def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
-                        manifest_fingerprint=None, per_backend=12, merged_limit=30):
+                        manifest_fingerprint=None, per_backend=12, merged_limit=30, backend=None, rerank_query=None):
     """Two-level reciprocal rank fusion with bounded work and query provenance.
 
     Raw backend scores are diagnostic only. Cache keys include the immutable
@@ -168,9 +183,12 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
             seen.add(key)
     if not 1 <= len(unique) <= 4:
         raise ValueError("Supply one to four distinct nonempty queries")
-    rerank = reranking_enabled() if rerank is None else rerank
+    from .reranking import backend_selection, capture_scores
+    selected_backend = backend_selection(backend, rerank)
+    rerank = selected_backend != "none"
     c = collection()
-    cache_key = (str(DBDIR.resolve()), COLLECTION, kind, manifest_fingerprint)
+    collection_identity = getattr(c, "id", type(c))
+    cache_key = (str(DBDIR.resolve()), COLLECTION, collection_identity, kind, manifest_fingerprint)
     cached = _BM25_CACHE.get(cache_key) if manifest_fingerprint else None
     if cached is None:
         everything = c.get(where={"kind": kind}, include=["documents", "metadatas"])
@@ -220,8 +238,15 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
         recorder.record_retrieved([records[idx] for idx in sorted(scores)])
     winners = sorted(scores, key=lambda idx: (-scores[idx], idx))[:merged_limit]
     passages = [{"id": idx, "text": records[idx]["text"], "meta": dict(records[idx]["meta"])} for idx in winners]
+    diagnostics = None
     if rerank:
-        passages = rerank_passages(unique[0], passages)
+        with capture_scores(selected_backend) as scored:
+            # Two-argument legacy calls remain patchable by existing callers/tests.
+            if selected_backend == "llm":
+                passages = rerank_passages(rerank_query or unique[0], passages)
+            else:
+                passages = rerank_passages(rerank_query or unique[0], passages, backend=selected_backend)
+        diagnostics = scored[-1] if scored else None
     passages = passages[:k]
     from .retrieval_trace import RetrievalTrace
     return {"passages": passages, "trace": RetrievalTrace.model_validate({
@@ -229,7 +254,7 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
             provenance=provenance[idx]) for idx in sorted(scores, key=lambda idx: (-scores[idx], idx))],
         "merged_ids": winners, "selected_ids": [p["id"] for p in passages],
         "mode": mode, "per_backend": per_backend, "merged_limit": merged_limit,
-        "reranked": bool(rerank)}).model_dump()}
+        "reranked": bool(rerank), "reranker": diagnostics}).model_dump()}
 
 
 def legal_chunks(source: str, pages: set[int]) -> list[dict]:

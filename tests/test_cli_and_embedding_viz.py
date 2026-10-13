@@ -17,6 +17,7 @@ def test_retrieval_override_before_command(monkeypatch):
 
 
 def test_rerank_flag_enables_local_reranking(monkeypatch):
+    monkeypatch.delenv("RERANK_BACKEND", raising=False)
     monkeypatch.delenv("RERANK_ENABLED", raising=False)
     monkeypatch.setattr("sys.argv", ["main.py", "--rerank", "ask", "Synthetic question"])
     received = []

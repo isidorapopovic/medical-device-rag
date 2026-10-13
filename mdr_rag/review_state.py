@@ -14,6 +14,7 @@ from .report_state import (
 from .schemas import Finding
 from .query_planner import plan_queries, PLANNER_RULES, PlannerPersistenceError, PlannerSelection
 from .search import reranking_enabled
+from .reranking import backend_selection, reranker_identity, requirement_rerank_query, citation_rerank_coverage
 from . import search
 from .review_evidence import prepare_legal_anchor, validate_finding
 from .source_buffer import EvidenceRecorder, SourceBuffer, recording
@@ -48,7 +49,7 @@ LIMITATIONS = [
     "Stage 2 verifies raw-span provenance and model-context membership, not semantic entailment or full claim coverage.",
 ]
 QUERY_VERSION = "bounded-source-constrained-intents-v3"
-RETRIEVAL_VERSION = "two-level-rrf-v3"
+RETRIEVAL_VERSION = "two-level-rrf-scored-rerank-v4"
 VALIDATION_VERSION = "finding-raw-span-provenance-v2"
 EXTRACTION_VERSION = "character-2000-overlap250-v1"
 REVIEW_INPUT = (
@@ -86,10 +87,12 @@ def configuration(k: int) -> dict:
         budgets[name.lower()] = value
     if not 1 <= k <= 30:
         raise ValueError("k must be between 1 and 30")
+    backend = backend_selection()
+    identity = reranker_identity(backend)
     return {**budgets, "multi_query_enabled": enabled == "true", "query_planner": planner,
             "planner_hash": fingerprint([PLANNER_RULES, inspect.getsource(plan_queries)]), "k": k, "retrieval_mode": mode, "rerank_enabled": reranking_enabled(),
             "llm_model": model, "embedding_model": embedding,
-            "num_ctx": ollama_num_ctx(), "reranker_backend": "llm" if reranking_enabled() else "none",
+            "num_ctx": ollama_num_ctx(), "reranker_backend": backend, "reranker_identity": identity,
             "calibration": "not_implemented", "extraction_version": EXTRACTION_VERSION,
             "query_version": QUERY_VERSION, "retrieval_version": RETRIEVAL_VERSION,
             "review_prompt_hash": fingerprint([REVIEW_RULES, REVIEW_INPUT, Finding.model_json_schema()]),
@@ -112,10 +115,10 @@ def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, con
                if config["query_planner"] == "llm" else {})),
         retrieval=fingerprint({key: config[key] for key in (
             "k", "retrieval_mode", "embedding_model", "reranker_backend", "calibration", "retrieval_version",
-            "retrieval_per_query", "retrieval_max_candidates")}
+            "retrieval_per_query", "retrieval_max_candidates", "reranker_identity")}
             | ({"reranker_model": config["llm_model"], "num_ctx": config["num_ctx"],
-                "reranker_prompt": fingerprint(inspect.getsource(search.rerank_passages))}
-               if config["rerank_enabled"] else {})),
+                "reranker_prompt": fingerprint(inspect.getsource(search._llm_rerank))}
+               if config["reranker_backend"] == "llm" else {})),
         review=fingerprint({"model": config["llm_model"], "num_ctx": config["num_ctx"],
                             "prompt": config["review_prompt_hash"]}),
         validation=fingerprint(config["validation_version"]),
@@ -217,9 +220,10 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
             persist_trace()
         recorder.persist = persist_retrieval_trace
         with recording(recorder):
-            if config["multi_query_enabled"]:
+            if config["multi_query_enabled"] or config["rerank_enabled"]:
                 result = search.retrieve_candidates(section.queries, "device", k=config["k"],
-                    mode=config["retrieval_mode"], rerank=config["rerank_enabled"],
+                    mode=config["retrieval_mode"], backend=config["reranker_backend"],
+                    rerank_query=requirement_rerank_query(section.queries[0], profile),
                     manifest_fingerprint=state.corpus_fingerprint,
                     per_backend=config["retrieval_per_query"], merged_limit=config["retrieval_max_candidates"])
                 found = result["passages"]
@@ -274,7 +278,8 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
             "legal_anchor": section.legal_anchor.model_dump() if section.legal_anchor else None,
             "legal_anchor_issue": section.legal_anchor_issue,
             "claim_links": [link.model_dump() for link in section.claim_links],
-            "citation_issues": section.citation_issues})
+            "citation_issues": section.citation_issues,
+            "rerank_citation_coverage": citation_rerank_coverage(section.claim_links, section.retrieval_trace)})
         section.execution_status = "completed"
         section.stale_reasons = []
     state.source_buffer = buffer.snapshots

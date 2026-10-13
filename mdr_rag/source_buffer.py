@@ -102,6 +102,14 @@ class ModelCallTrace(BaseModel):
     retrieved_buffer_ids: list[str] = Field(default_factory=list)
     presented: list[PresentedPassage] = Field(default_factory=list)
     outcome: Literal["started", "completed", "failed"] = "started"
+    rerank: dict | None = None
+
+    @model_validator(mode="after")
+    def valid_rerank(self):
+        if self.rerank is not None:
+            from .rerank_state import RerankDiagnostics
+            RerankDiagnostics.model_validate(self.rerank)
+        return self
 
 
 def checked_passage(value) -> SourcePassage:

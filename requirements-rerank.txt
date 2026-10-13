@@ -1,0 +1,8 @@
+# Optional cross-encoder stack; install separately from requirements.txt.
+# CPU is explicitly enforced by the application, irrespective of wheel features.
+sentence-transformers==5.1.2
+transformers==4.57.1
+torch==2.8.0
+safetensors==0.6.2
+# Used only by the separately marked latency/memory smoke test.
+psutil>=7.0,<8

@@ -21,6 +21,7 @@ def requirement(key):
 @pytest.fixture
 def workflow(monkeypatch, tmp_path):
     monkeypatch.setenv("MULTI_QUERY_ENABLED", "false")
+    monkeypatch.delenv("RERANK_BACKEND", raising=False)
     state_root = tmp_path / "state"
     state_root.mkdir()
     draft = {"requirements": [requirement(key) for key in ("R1", "R2", "R3")],

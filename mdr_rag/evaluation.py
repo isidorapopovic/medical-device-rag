@@ -12,6 +12,7 @@ from rank_bm25 import BM25Okapi
 from .core import REPORTS, ROOT
 from .pipeline import check_manifest
 from .search import _tokens, collection, embeddings, rerank_passages, reranking_enabled
+from .reranking import backend_selection, capture_scores, reranker_identity
 
 
 def load_gold(path):
@@ -100,6 +101,10 @@ def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=N
     top_k = max(ks)
     if include_reranked is None:
         include_reranked = reranking_enabled()
+    backend = backend_selection() if include_reranked else "none"
+    if include_reranked and backend == "none":
+        backend = "llm"  # Explicit legacy include_reranked=True.
+    identity = reranker_identity(backend)
     db = collection()
     corpora = {}
     for kind in ("legal", "device"):
@@ -142,7 +147,7 @@ def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=N
         hybrid = fusion(dense, bm25, scores_by_id, top_k)
         methods = [("dense", dense), ("bm25", bm25), ("hybrid", hybrid)]
         if include_reranked:
-            candidate_count = min(max(top_k * 3, 12), len(hybrid))
+            candidate_count = min(30, max(top_k * 3, 12), len(hybrid))
             candidates = [
                 {
                     "id": chunk_id,
@@ -151,7 +156,9 @@ def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=N
                 }
                 for chunk_id in hybrid[:candidate_count]
             ]
-            reranked = rerank_passages(ex["query"], candidates)
+            with capture_scores(backend) as scores:
+                reranked = rerank_passages(ex["query"], candidates)
+            rerank_diagnostics = scores[-1] if scores else None
             methods.append(("hybrid_reranked", [passage["id"] for passage in reranked]))
         for method, ordered in methods:
             for k in ks:
@@ -161,6 +168,7 @@ def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=N
                 results.append({
                     "query_id": ex["id"], "question": ex["query"], "kind": kind,
                     "method": method, "k": k, **result,
+                    "reranker": rerank_diagnostics if method == "hybrid_reranked" else None,
                     "found_labels": matched, "missed_labels": missed,
                     "retrieved": [
                         {"id": chunk, "source": corpus["metadata_by_id"][chunk]["source"],
@@ -186,8 +194,9 @@ def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=N
         "n_legal_questions": sum(ex["kind"] == "legal" for ex in examples),
         "n_device_questions": sum(ex["kind"] == "device" for ex in examples),
         "embedding_model": manifest["embedding_model"],
-        "reranker_model": os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b") if include_reranked else None,
-        "reranker_candidate_count": max(top_k * 3, 12) if include_reranked else None,
+        "reranker_model": identity.get("model"),
+        "reranker_backend": backend, "reranker_identity": identity,
+        "reranker_candidate_count": min(30, max(top_k * 3, 12)) if include_reranked else None,
         "indexed_sources_sha256": {item["source"]: item["sha256"] for item in manifest["files"]},
         "k_values": ks,
         "average_metrics": aggregate,

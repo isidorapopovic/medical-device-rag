@@ -409,6 +409,7 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
             "legal_anchor_issue": published.get("legal_anchor_issue", "legacy_raw_span_unverified" if not anchor else None),
             "query_plan": published.get("query_plan"),
             "retrieval_trace": published.get("retrieval_trace"),
+            "rerank_citation_coverage": published.get("rerank_citation_coverage", []),
             "retrieved_buffer_ids": published.get("retrieved_buffer_ids", []),
             "draft_call_id": published.get("draft_call_id"),
             "claim_links": published.get("claim_links", []),

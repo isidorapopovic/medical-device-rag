@@ -36,9 +36,15 @@ class RetrievalTrace(TraceModel):
     per_backend: int = Field(ge=1, le=12)
     merged_limit: int = Field(ge=1, le=30)
     reranked: bool
+    reranker: dict | None = None
 
     @model_validator(mode="after")
     def consistent_lists(self):
+        if self.reranker is not None:
+            from .rerank_state import RerankDiagnostics
+            diagnostics = RerankDiagnostics.model_validate(self.reranker)
+            if {s.id for s in diagnostics.scores} != set(self.merged_ids):
+                raise ValueError("Reranker scores must map one-to-one to the merged pool")
         ids = [c.id for c in self.candidates]
         if len(ids) != len(set(ids)):
             raise ValueError("Candidate IDs must be unique")

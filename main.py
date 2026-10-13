@@ -18,10 +18,13 @@ def main():
         "--retrieval", choices=["dense", "bm25", "hybrid"], default=None,
         help="Override RETRIEVAL_MODE for this command (place before the command)",
     )
-    parser.add_argument(
+    rerank_options = parser.add_mutually_exclusive_group()
+    rerank_options.add_argument(
         "--rerank", action="store_true",
         help="Use the local Ollama LLM to rerank retrieved candidates (slower)",
     )
+    rerank_options.add_argument("--rerank-backend", choices=["none", "llm", "cross_encoder"],
+                                help="Select a local reranker backend (before the command)")
     subs = parser.add_subparsers(dest="command", required=True)
     subs.add_parser("inspect", help="List files and readable PDF pages")
     locate = subs.add_parser("locate", help="Find text to identify PDF page ranges")
@@ -67,6 +70,10 @@ def main():
         os.environ["RETRIEVAL_MODE"] = args.retrieval
     if args.rerank:
         os.environ["RERANK_ENABLED"] = "true"
+        os.environ["RERANK_BACKEND"] = "llm"
+    if args.rerank_backend is not None:
+        os.environ["RERANK_BACKEND"] = args.rerank_backend
+        os.environ["RERANK_ENABLED"] = "false" if args.rerank_backend == "none" else "true"
     try:
         if args.command == "inspect":
             inspect_files()
