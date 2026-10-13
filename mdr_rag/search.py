@@ -6,6 +6,7 @@ import chromadb
 from rank_bm25 import BM25Okapi
 
 from .core import DBDIR, ROOT, all_records
+from .config import ollama_num_ctx
 from .schemas import RerankBatch
 
 COLLECTION = "medical_mdr_evidence"
@@ -90,7 +91,7 @@ def rerank_passages(query: str, passages: list[dict]) -> list[dict]:
             },
         ],
         format=RerankBatch.model_json_schema(),
-        options={"temperature": 0, "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "8192"))},
+        options={"temperature": 0, "num_ctx": ollama_num_ctx()},
         think=False,
     )
     try:

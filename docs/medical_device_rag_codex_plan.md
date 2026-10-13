@@ -409,13 +409,9 @@ Do not add a fake calibration file just to make strict mode run. The calibration
 
 ### Stage 0 completion record
 
-- **Implementation commit:** this Stage 0 commit (see Git history).
-- **Checkout inspected:** `7414272b6241c8ea628e29810e81947a7c8c3592` (`updated code, readme and requiremnts`), not the plan's original `e56ce7814f27caedf7d9bda3adbaca22fe04f066`.
-- **Configuration:** `.env.example` already matches the modular Ollama defaults used by `mdr_rag/`; the user's `.env` was not opened or modified. `requirements.txt` contains the Ollama stack without Gemini/OpenAI dependencies.
-- **Changes:** documented `main.py`/`streamlit_app.py` as the supported Ollama entry points and documented `rag.py` as a retained legacy Gemini prototype whose `mdr_rag.tls` and `mdr_rag.quota` imports are absent from this checkout. The legacy script and all index/data locations were left in place.
-- **Checks:** before and after changes, `python main.py --help` succeeded without API credentials; the existing test suite passed (25 tests); Pylance found no syntax errors in `rag.py`; `git diff --check` passed.
-- **Live baseline limitation:** local source directories contain files and Ollama is installed, but the configured chat model `qwen3:4b` is not among the locally available models. More importantly, this checkout's `review` command writes directly to fixed `reports/assessment.json` and `reports/assessment.md` paths and offers no assessment/run ID, so a baseline review would overwrite existing generated assessments. No live retrieval evaluation was run because it would consume the user's corpus/index and create derived evaluation artifacts. To preserve user assessments and avoid exposing confidential document-derived content, only safe CLI and test checks were used. The `.env`, uploaded documents, vector database, and existing assessments were preserved.
-- **Remaining limitations:** no separate isolated assessment-output mechanism exists yet. Stage 0 did not change application behavior or implement any later stage.
+- Stage 0 verified on 2026-10-13 against checkout `89d8c02047743b35354c4006c5c5fa9c96b0b5b1` plus working-tree changes; implementation commit recorded in Git history on `qmatrix-impelmantion`.
+- See [stage0_baseline.md](stage0_baseline.md) for reproducible commands, pre-existing environment errors, 25 passing pre-change tests and 31 passing post-change tests, preservation details and live baseline blockers.
+- Only mocked/API-free review/retrieval verification was possible: the requested chat model is not installed and the real gold set is empty. No index rebuild or assessment overwrite occurred.
 
 For each completed stage, record the implementation commit, checks run, observed results and remaining limitations. A mocked test passing establishes code behavior; it does not establish regulatory reasoning accuracy.
 

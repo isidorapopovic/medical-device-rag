@@ -2,7 +2,7 @@
 
 The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload and preview); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
-`rag.py` is a separate, older Gemini prototype retained for reference, not the supported application. It imports `mdr_rag.tls` and `mdr_rag.quota`, which are not present in this checkout, and expects Gemini dependencies and credentials not used by the modular app. Do not use it for the supported workflow; use `main.py` instead. The script is retained in place and has not been run, so its separate Chroma collection/index has not been changed.
+`rag.py` is a separate, older Gemini prototype retained for reference, not the supported application. It imports `mdr_rag.tls` and `mdr_rag.quota`, which are not present in this checkout, and expects Gemini dependencies and credentials not used by the modular app. Do not use it for the supported workflow; use `main.py` instead. The script is retained in place. It uses the same `vector_db/` directory but a separate collection named `medical_device_rag_<Gemini embedding model with hyphens replaced by underscores>`; the modular app uses `medical_mdr_evidence`. Do not delete, migrate or reuse the legacy collection as an Ollama index.
 
 ## Quick start
 
@@ -16,7 +16,7 @@ ollama pull qwen3:4b
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 python main.py inspect
 python main.py index
 python main.py ask "What does the MDR say about risk management?"
@@ -32,7 +32,7 @@ ollama pull qwen3:4b
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-cp .env.example .env
+[ -f .env ] || cp .env.example .env
 python main.py inspect
 python main.py index
 python main.py ask "What does the MDR say about risk management?"
@@ -51,7 +51,17 @@ Before indexing, copy original MDR PDF into `documents/legal/` and medical devic
 
 On CPU, indexing and structured legal extraction may be slow. The legal requirements and regulatory reports remain **draft evidence mappings**, not legal approvals. Small local models can omit obligations and return invalid structured outputs; review their results carefully.
 
-Changing `EMBEDDING_MODEL` requires `python main.py index` again. Model execution is local, but review your own confidentiality/security requirements.
+Changing `EMBEDDING_MODEL` requires an intentional index rebuild before using that model with existing data. `index` deletes and recreates the modular collection; do not run it just to verify an existing baseline. Model execution is local, but review your own confidentiality/security requirements.
+
+## Local configuration and baseline checks
+
+`.env.example` lists the six settings read by the modular app: `EMBEDDING_MODEL=embeddinggemma`, `OLLAMA_LLM_MODEL=qwen3:4b`, `OLLAMA_NUM_CTX=8192`, `RETRIEVAL_MODE=hybrid`, `RERANK_ENABLED=false`, and `LEGAL_VERSION=UNSPECIFIED HISTORICAL TEXT`. These are app defaults, not performance guarantees. `LEGAL_VERSION` is a user-supplied label, not a verified legal edition. `OLLAMA_NUM_CTX` must be a positive integer supported by your local model. Retrieval accepts `dense`, `bm25`, or `hybrid`; reranking accepts `true` or `false`. CLI overrides take precedence; otherwise process environment variables take precedence over `.env`, then code defaults apply. The setup commands above preserve an existing `.env`.
+
+After activating the project virtual environment, `python main.py --help` needs installed Python dependencies but no Gemini credentials or inference. Run `python -m pytest -q` for API-free tests. If Windows temp-folder permissions block pytest, use a fresh writable directory, for example `python -m pytest -q --basetemp reports/test-temp-stage0`. Pytest clears the chosen directory, so always choose a dedicated test-only path.
+
+`review` currently overwrites `reports/assessment.json` and `reports/assessment.md`; it has no CLI run-ID option. For an isolated baseline, use a unique output directory by setting `mdr_rag.pipeline.REPORTS` to that directory in a Python wrapper before calling `run_review(limit=2)`. This changes only report destinations, not source/state/index locations. Evaluation supports `python main.py evaluate --gold eval/gold_queries.json --out reports/<distinct-run-id>/retrieval_evaluation.json`. Run both only with matching existing state/index, installed local models and real human-verified gold labels. Do not use illustrative gold labels as measurements.
+
+The current Stage 0 results and live-run blockers are recorded in [docs/stage0_baseline.md](docs/stage0_baseline.md).
 
 ## Document upload and preview app
 
@@ -82,7 +92,7 @@ Choose whether each upload belongs to the legal/regulatory or device collection.
 ## 2. Put your files in their correct folders
 
 ```text
-mdr_regulatory_rag/
+medical-device-rag/
   documents/
     legal/
       MDR_2017.pdf       <- Your uploaded original 2017 regulation
@@ -119,7 +129,7 @@ The `locate` command returns *all* physical PDF pages with a text match (includi
 python main.py index
 ```
 
-This clears and rebuilds the entire local Chroma collection to avoid retaining removed passages. It saves SHA-256 checksums and extraction warnings to `state/manifest.json`.
+This clears and rebuilds the modular `medical_mdr_evidence` Chroma collection to avoid retaining removed passages. It saves SHA-256 checksums and extraction warnings to `state/manifest.json`.
 
 **C. Test retrieval via question-answering:**
 
@@ -141,13 +151,13 @@ python main.py extract --legal-file MDR_2017.pdf --pages "90-92"
 python main.py review
 ```
 
-Test with only 5 requirements first to control costs:
+Test with only 5 requirements first to limit local inference time:
 
 ```powershell
 python main.py review --limit 5
 ```
 
-Partial runs are explicitly marked in the resulting report. `review` uses dense+BM25 hybrid retrieval on the **device** corpus for EACH draft requirement, then generates one source-grounded structured assessment. No claim of exhaustive legal coverage is made: the chosen pages and the imperfect requirement extraction constrain coverage.
+Partial runs are explicitly marked in the resulting report. `review` uses the configured retrieval mode (hybrid by default) on the **device** corpus for EACH draft requirement, then generates one source-grounded structured assessment. No claim of exhaustive legal coverage is made: the chosen pages and the imperfect requirement extraction constrain coverage.
 
 ## 4. Output files
 
@@ -211,7 +221,7 @@ The tests check page scoping, source quote verification, chunk sizes, fabricated
 
 **This evaluation measures evidence retrieval and documented citation relationships, NOT whether a medical device is legally compliant.** It is an extension of the original v1 CLI project. All input documents, the `.env` file, and the existing indexed vector database remain local to this project's folder (unless you deliberately copy them).
 
-Place medical-device files and your MDR PDF as in the preceding sections, then build or refresh the index:
+For a new corpus, place medical-device files and your MDR PDF as in the preceding sections, then build the index. Skip this step when evaluating an unchanged existing index:
 
 ```powershell
 python main.py index
@@ -269,11 +279,11 @@ python main.py evaluate --gold eval/gold_queries.json --ks 3 5 10
 
 Creates `reports/retrieval_evaluation.json` (aggregate and per-question metrics, missed gold labels, top-k passages) and `reports/retrieval_evaluation.html` (interactive performance curves).
 
-**Metrics**: `Recall@k` = distinct relevant human-labeled source pages/chunks retrieved in top k / total relevant labels. `Precision@k` = distinct relevant labels retrieved in top k / k. `HitRate@k` = fraction of questions with at least one labeled hit. `MRR@k` = mean inverse rank of the earliest labeled hit. `nDCG@k` = normalized discount-weighted ranking quality using one credit per distinct relevant label. Dense uses the vector index, BM25 lexical matches, and hybrid uses rank fusion matching the app's search strategy. For reproducibility reports include indexed file hashes and embedding model ID.
+**Metrics**: `Recall@k` = distinct relevant human-labeled source pages/chunks retrieved in top k / total relevant labels. `Precision@k` = distinct relevant labels retrieved in top k / k. `HitRate@k` = fraction of questions with at least one labeled hit. `MRR@k` = mean inverse rank of the earliest labeled hit. `nDCG@k` = normalized discount-weighted ranking quality using one credit per distinct relevant label. Dense uses the vector index, BM25 lexical matches, and hybrid uses the same reciprocal-rank fusion formula as the app. Evaluation currently has a separate retrieval implementation; candidate limits and tie handling can differ from production search. For reproducibility reports include indexed file hashes and embedding model ID.
 
 **Interpretation**: Scores are about how well the system finds *annotated* evidence. They are not answer accuracy, citation faithfulness, legal coverage, regulatory applicability or compliance. Use a held-out test set and human adjudication. Always report question count, label granularity, and confidence/uncertainty rather than making claims from a handful of questions.
 
-For `ask`, the generated answer is shown only when it includes at least one source ID matching a retrieved passage and a second local-model pass finds support for every factual claim. Each claim must include a passage ID and an exact quote that is present in that passage; unsupported claims, invented IDs, unverifiable quotes, or an empty claim audit make the CLI abstain. This is an additional model-based check, not a proof of entailment or a guarantee against mistakes.
+For `ask`, the generated answer is shown only when it includes at least one source ID matching a retrieved passage and a second local-model pass finds support for every factual claim. Each claim must include a passage ID and a quote matching that passage after case folding and whitespace/soft-hyphen normalization (this is not raw character-span validation); unsupported claims, invented IDs, unverifiable quotes, or an empty claim audit make the CLI abstain. This is an additional model-based check, not a proof of entailment or a guarantee against mistakes.
 
 Add `--rerank` before the command to compare the hybrid candidate ranking with local LLM reranking:
 
