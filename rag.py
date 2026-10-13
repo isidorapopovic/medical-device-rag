@@ -1,4 +1,5 @@
 
+"""Legacy Gemini prototype; use main.py for the supported Ollama application."""
 import os
 import sys
 import time

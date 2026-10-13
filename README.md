@@ -1,9 +1,14 @@
-# LOCAL CPU / OLLAMA EDITION — updated instructions
+# Medical Device RAG
 
-This edition replaces **OpenAI** with **Ollama** for both embeddings and structured LLM answers. BM25 is optional.
-All previous documentation below is inherited from the cloud edition: **ignore instructions about OPENAI_API_KEY, OPENAI_MODEL, and cloud embeddings**.
+The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload and preview); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
-### Quick start (PowerShell)
+`rag.py` is a separate, older Gemini prototype retained for reference. It is not the supported application, is not covered by the setup instructions below, and may not work with the current package. Use `main.py` instead.
+
+## Quick start
+
+### Windows (PowerShell)
+
+Install and start Ollama, then run:
 
 ```powershell
 ollama pull embeddinggemma
@@ -14,19 +19,39 @@ python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 python main.py inspect
 python main.py index
-python main.py --retrieval hybrid ask "What does the MDR say about risk management?"
-python main.py --retrieval dense ask "What does the MDR say about risk management?"
+python main.py ask "What does the MDR say about risk management?"
+```
+
+### macOS / Linux
+
+Install and start Ollama, then run:
+
+```bash
+ollama pull embeddinggemma
+ollama pull qwen3:4b
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+python main.py inspect
+python main.py index
+python main.py ask "What does the MDR say about risk management?"
+```
+
+The default embedding and language models are `embeddinggemma` and `qwen3:4b`. Change `EMBEDDING_MODEL` or `OLLAMA_LLM_MODEL` in `.env` to use different Ollama models. Retrieval defaults to hybrid dense + BM25; use `RETRIEVAL_MODE=dense` or `RETRIEVAL_MODE=bm25` to change it. BM25-only retrieval does not call the embedding model. The `--retrieval` and `--rerank` options are global CLI options and go before the command, for example:
+
+```powershell
 python main.py --retrieval bm25 ask "What does the MDR say about risk management?"
 python main.py --rerank ask "What does the MDR say about risk management?"
 ```
 
-`--retrieval` and `--rerank` are **global** argparse options and go before the command. `--rerank` runs the local `OLLAMA_LLM_MODEL` over a small candidate set and may be slower, especially on CPU. `RETRIEVAL_MODE=hybrid` in `.env` sets the retrieval default. Chroma still stores embeddings for dense/hybrid even if you later choose BM25-only. BM25-only queries don't call the embedding service.
+`--rerank` uses the local Ollama language model on a small candidate set and may be slower, especially on CPU. Dense and hybrid retrieval need Ollama embeddings and an indexed Chroma database. Ollama must be running at its normal local address.
 
 Before indexing, copy original MDR PDF into `documents/legal/` and medical device files into `documents/device/`. Then use `locate`, `extract`, `review`, `visualize-embeddings`, `evaluate`, and `graph` as documented below.
 
-Ollama must be running at its normal local address. On CPU, indexing and structured legal extraction may be slow. The legal requirements and regulatory reports remain **draft evidence mappings**, not legal approvals. Small local models can omit obligations and return invalid structured outputs; review their results carefully.
+On CPU, indexing and structured legal extraction may be slow. The legal requirements and regulatory reports remain **draft evidence mappings**, not legal approvals. Small local models can omit obligations and return invalid structured outputs; review their results carefully.
 
-Changing EMBEDDING_MODEL requires `python main.py index` again. Your files remain local unless you explicitly send them elsewhere, but review your own confidentiality/security requirements.
+Changing `EMBEDDING_MODEL` requires `python main.py index` again. Model execution is local, but review your own confidentiality/security requirements.
 
 ## Document upload and preview app
 
@@ -49,34 +74,10 @@ Choose whether each upload belongs to the legal/regulatory or device collection.
 
 ## 1. Requirements
 
-- Python 3.11 or 3.12, Windows, macOS, or Linux
-- A working OpenAI API key and access to the configured models
-- Internet connectivity for first-time Python package installation and API calls
-- Text-extractable PDF(s); scanned pages require separate OCR before ingestion
-- Do not send confidential intellectual property, patient records, or restricted files to an external API without documented authorization and an appropriate data protection arrangement.
-
-### Set up on Windows (PowerShell, VS Code terminal)
-
-```powershell
-cd path\to\mdr_regulatory_rag
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
-notepad .env
-```
-
-Put a valid OpenAI API key in `.env` and adjust `OPENAI_MODEL` to an available supported model if needed. `store=False` is set for Responses API calls. Embedding inputs and model prompts are still transmitted to the API provider. Check your data-processing requirements.
-
-### macOS / Linux
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env to set OPENAI_API_KEY
-```
+- Python 3.11 or 3.12 on Windows, macOS, or Linux
+- Ollama installed and running, with the models described in Quick start pulled locally
+- Text-extractable source documents; scanned pages require separate OCR before ingestion
+- Internet connectivity for initial Python package installation and model downloads
 
 ## 2. Put your files in their correct folders
 
@@ -170,7 +171,7 @@ Every candidate legal requirement stores: uploaded filename, SHA-256 hash, sourc
 ## 5. Why this implementation is RAG
 
 1. `core.py`: extracts source text and creates traceable chunks.
-2. `search.py`: embeds chunks with `text-embedding-3-small`, stores vectors in ChromaDB; retrieval merges dense semantic ranking with BM25 lexical ranking using reciprocal-rank fusion.
+2. `search.py`: embeds chunks with the configured local Ollama embedding model, stores vectors in ChromaDB; retrieval merges dense semantic ranking with BM25 lexical ranking using reciprocal-rank fusion.
 3. `pipeline.py:extract_requirements`: prompts an LLM per chunk of the selected MDR pages, validates a verbatim quote against its source, and builds a structured draft requirement register.
 4. `pipeline.py:run_review`: retrieves device evidence for each individual requirement, prompts the LLM with ONLY that requirement + retrieved passages, validates IDs, and saves structured findings.
 5. `Q_Mix_report_writer.py`: deterministic template report built from source-anchored findings, not an autonomous legal agent.
@@ -181,7 +182,7 @@ Every candidate legal requirement stores: uploaded filename, SHA-256 hash, sourc
 python -m pytest -q
 ```
 
-The tests check page scoping, source quote verification, chunk sizes, fabricated citation filtering, and report generation. They do NOT replace an MDR domain expert review or a full end-to-end run against real documents. This distribution does not include the copyrighted/official MDR PDF or actual device records; supply them separately. API requests incur model and embedding charges.
+The tests check page scoping, source quote verification, chunk sizes, fabricated citation filtering, and report generation. They do NOT replace an MDR domain expert review or a full end-to-end run against real documents. This distribution does not include the copyrighted/official MDR PDF or actual device records; supply them separately. Ollama inference runs locally; downloading Python packages and Ollama models requires internet access.
 
 ### Limitations before using for real regulatory work
 
@@ -210,13 +211,7 @@ The tests check page scoping, source quote verification, chunk sizes, fabricated
 
 **This evaluation measures evidence retrieval and documented citation relationships, NOT whether a medical device is legally compliant.** It is an extension of the original v1 CLI project. All input documents, the `.env` file, and the existing indexed vector database remain local to this project's folder (unless you deliberately copy them).
 
-## Install upgraded dependencies
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-Place medical-device files and your MDR PDF as in the preceding sections, then run:
+Place medical-device files and your MDR PDF as in the preceding sections, then build or refresh the index:
 
 ```powershell
 python main.py index
