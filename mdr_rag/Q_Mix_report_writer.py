@@ -31,6 +31,7 @@ def write_markdown(assessment: dict, destination: Path) -> None:
         f"- Requirements assessed: {assessment['assessed_requirements']} / {assessment['total_extracted_requirements']}",
         f"- Partial run: {'YES' if assessment['partial_run'] else 'NO'}",
         f"- Human validated: NO",
+        f"- Evidence gate mode: {assessment.get('evidence_gate_mode', 'not_performed_legacy')}",
         f"- Snapshot: {'HISTORICAL — not validated against current inputs' if assessment.get('historical_snapshot') else 'Current dependency check required before reuse'}",
         "",
         "## Evidence-status overview (not a compliance score)",
@@ -38,7 +39,7 @@ def write_markdown(assessment: dict, destination: Path) -> None:
         "| Status | Number |",
         "|---|---:|",
     ]
-    for name in ("supported", "partial", "not_found", "needs_review", "possibly_not_applicable"):
+    for name in ("supported", "partial", "not_found", "needs_review", "possibly_not_applicable", "insufficient_evidence"):
         out.append(f"| {name} | {assessment['status_counts'].get(name, 0)} |")
     if assessment.get("sections"):
         out += ["", "## Execution and checkpoint status", "",
@@ -78,6 +79,19 @@ def write_markdown(assessment: dict, destination: Path) -> None:
                 continue
             locator = f"PDF page {p['page']}" if p["page"] else f"text block {p['block']}"
             out.append(f"- `{id_}` — `{p['source']}`, {locator}; SHA-256 `{p['sha256']}`")
+        gate = row.get("evidence_gate")
+        if gate:
+            out += ["", f"**Evidence gate:** {gate['mode']} / {gate['status']}; reason: {clean(gate['reason'])}.",
+                    f"Strict relevance validation passed: {gate['strict_validation_passed']}; accepted: {len(gate['accepted_ids'])}; rejected: {len(gate['rejected_ids'])}.",
+                    f"Calibration fingerprint: `{gate.get('calibration_fingerprint') or 'NONE'}`; threshold: `{gate.get('threshold')}`.",
+                    "Passing relevance does not establish complete obligation coverage or compliance."]
+            if gate["mode"] != "strict":
+                out.append("**No successful strict gate validation: gate is disabled or experimental.**")
+        else:
+            out += ["", "**Evidence gate:** not performed in this historical/legacy finding; no strict validation claimed."]
+        if f.get("obligation_coverage"):
+            out += ["", "**Atomic obligation coverage (model self-assessment; raw citations checked, semantics unverified):**"]
+            out += [f"- `{clean(c['obligation_id'])}`: {c['status']}; {clean(c['explanation'])}" for c in f['obligation_coverage']]
         if row.get("claim_links"):
             out += ["", "**Verified cited raw spans (provenance, not semantic entailment):**", ""]
             for link in row["claim_links"]:

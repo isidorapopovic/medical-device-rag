@@ -35,6 +35,7 @@ class RetrievalTrace(TraceModel):
     mode: Literal["dense", "bm25", "hybrid"]
     per_backend: int = Field(ge=1, le=12)
     merged_limit: int = Field(ge=1, le=30)
+    corpus_size: int | None = Field(default=None, ge=0)
     reranked: bool
     reranker: dict | None = None
 

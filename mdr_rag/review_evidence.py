@@ -50,7 +50,8 @@ def prepare_legal_anchor(section, buffer, app):
 def validate_finding(section, buffer, app):
     """Check identities/raw spans/context membership, without claiming entailment."""
     finding = section.draft_finding.model_copy(deep=True)
-    ids = app.validate_ids(finding.evidence_ids, [p.model_dump() for p in section.passages])
+    allowed = section.evidence_gate.draft_ids if section.evidence_gate else [p.id for p in section.passages]
+    ids = app.validate_ids(finding.evidence_ids, [p.model_dump() for p in section.passages if p.id in allowed])
     section.claim_links, section.citation_issues = [], []
     if section.legal_anchor is None:
         section.citation_issues.append("legal_anchor_not_raw_verified")
@@ -105,4 +106,39 @@ def validate_finding(section, buffer, app):
         finding.status = "needs_review"
         finding.explanation += " [SYSTEM: raw-span provenance requires review; see citation_issues.]"
     section.citation_issues = list(dict.fromkeys(section.citation_issues))
+    return finding
+
+
+def validate_obligation_coverage(section, finding):
+    """Conservative checks on a model self-assessment, not semantic verification."""
+    gate = section.evidence_gate
+    if gate is None or gate.mode == "disabled":
+        return finding
+    expected = {row.obligation_id: row for row in gate.obligations}
+    coverage = {row.obligation_id: row for row in finding.obligation_coverage}
+    uncertain = set(coverage) != set(expected) or len(coverage) != len(finding.obligation_coverage)
+    partial = False
+    cited = {link.chunk_id for link in section.claim_links if link.purpose == "device_support"}
+    for key, row in coverage.items():
+        if key not in expected or not set(row.evidence_ids) <= set(gate.draft_ids) & cited:
+            uncertain = True
+            continue
+        qualifiers = set(expected[key].qualifiers)
+        if not set(row.addressed_qualifiers) <= qualifiers:
+            uncertain = True
+        if row.status in {"supported", "partial"} and not row.evidence_ids:
+            uncertain = True
+        if row.status == "uncertain":
+            uncertain = True
+        if row.status in {"partial", "not_addressed"} or (row.status == "supported" and qualifiers - set(row.addressed_qualifiers)):
+            partial = True
+            if row.status == "supported":
+                row.status = "partial"
+    if uncertain:
+        finding.status = "needs_review"
+        finding.explanation += " [SYSTEM: atomic obligation coverage is missing, uncertain or references unretained evidence.]"
+    elif partial and finding.status == "supported":
+        finding.status = "partial"
+        finding.explanation += " [SYSTEM: not all atomic obligations/explicit qualifiers have supporting coverage.]"
+    gate.coverage_verification = "model_self_assessed_raw_citations_only"
     return finding

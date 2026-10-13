@@ -1,0 +1,38 @@
+{
+  "human_validated": false,
+  "reviewer": "REPLACE only after real independent human labeling; this example is not calibration",
+  "cases": [
+    {
+      "id": "cal-answerable",
+      "assessment": "../state/assessments/scored-run/report_state.json",
+      "requirement_id": "REPLACE_REQUIREMENT_ID",
+      "split": "calibration",
+      "answerable": true,
+      "passages": [{"id": "COPY_EVERY_SCORED_ID", "relevant": null, "label_kind": "REPLACE"}]
+    },
+    {
+      "id": "cal-unanswerable",
+      "assessment": "../state/assessments/scored-run/report_state.json",
+      "requirement_id": "REPLACE_DIFFERENT_REQUIREMENT_ID",
+      "split": "calibration",
+      "answerable": false,
+      "passages": [{"id": "COPY_EVERY_SCORED_ID", "relevant": null, "label_kind": "REPLACE"}]
+    },
+    {
+      "id": "heldout-answerable",
+      "assessment": "../state/assessments/scored-run/report_state.json",
+      "requirement_id": "REPLACE_DISTINCT_HELDOUT_REQUIREMENT_ID",
+      "split": "held_out",
+      "answerable": true,
+      "passages": [{"id": "COPY_EVERY_SCORED_ID", "relevant": null, "label_kind": "REPLACE"}]
+    },
+    {
+      "id": "heldout-unanswerable",
+      "assessment": "../state/assessments/scored-run/report_state.json",
+      "requirement_id": "REPLACE_ANOTHER_DISTINCT_HELDOUT_REQUIREMENT_ID",
+      "split": "held_out",
+      "answerable": false,
+      "passages": [{"id": "COPY_EVERY_SCORED_ID", "relevant": null, "label_kind": "REPLACE"}]
+    }
+  ]
+}

@@ -20,6 +20,7 @@ def requirement(key):
 
 @pytest.fixture
 def workflow(monkeypatch, tmp_path):
+    monkeypatch.setenv("EVIDENCE_GATE_MODE", "disabled")
     monkeypatch.setenv("MULTI_QUERY_ENABLED", "false")
     monkeypatch.delenv("RERANK_BACKEND", raising=False)
     state_root = tmp_path / "state"
@@ -79,7 +80,7 @@ def test_interrupted_run_resumes_from_retrieval_checkpoint(workflow, monkeypatch
     with pytest.raises(KeyboardInterrupt):
         pipeline.run_review(assessment_id="demo", limit=1, k=4)
     saved = workflow["store"].load()
-    assert saved.sections["R1"].checkpoint == "retrieval"
+    assert saved.sections["R1"].checkpoint == "gate"
     assert saved.sections["R1"].execution_status == "running"
     assert len(workflow["calls"]["retrieval"]) == 1
     monkeypatch.setattr(pipeline, "llm_parse", workflow["llm"])
@@ -101,7 +102,7 @@ def test_failed_draft_keeps_last_checkpoint_and_resumes(workflow, monkeypatch):
         pipeline.run_review(assessment_id="demo", limit=1)
     saved = workflow["store"].load()
     assert saved.sections["R1"].execution_status == "failed"
-    assert saved.sections["R1"].checkpoint == "retrieval"
+    assert saved.sections["R1"].checkpoint == "gate"
     assert "private document" not in workflow["store"].path.read_text()
     monkeypatch.setattr(pipeline, "llm_parse", workflow["llm"])
     final = pipeline.run_review(assessment_id="demo", resume=True, limit=1)
@@ -142,7 +143,7 @@ def test_checkpoint_write_failure_resumes_from_last_committed_stage(workflow, mo
         patch.setattr(report_state.os, "replace", fail_draft_write)
         with pytest.raises(OSError):
             pipeline.run_review(assessment_id="demo", limit=1)
-    assert workflow["store"].load().sections["R1"].checkpoint == "retrieval"
+    assert workflow["store"].load().sections["R1"].checkpoint == "gate"
     final = pipeline.run_review(assessment_id="demo", resume=True, limit=1)
     assert final.sections["R1"].execution_status == "completed"
     assert len(workflow["calls"]["retrieval"]) == 1
@@ -201,7 +202,7 @@ def test_requirement_edit_retrieves_only_affected_section(workflow):
 
 @pytest.mark.parametrize("change,retained", [
     ("profile", "pending"), ("corpus", "queries"), ("retrieval", "queries"),
-    ("review", "retrieval"), ("validation", "draft"), ("query", "applicability")])
+    ("review", "gate"), ("gate", "retrieval"), ("validation", "draft"), ("query", "applicability")])
 def test_dependencies_invalidate_at_earliest_affected_stage(workflow, change, retained):
     state = pipeline.run_review(assessment_id="demo", limit=1)
     section = state.sections["R1"]

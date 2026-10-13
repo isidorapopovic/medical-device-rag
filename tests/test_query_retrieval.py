@@ -137,7 +137,7 @@ def test_default_review_persists_plan_and_trace_and_resumes(workflow, corpus, mo
     with pytest.raises(KeyboardInterrupt):
         pipeline.run_review(assessment_id="demo", limit=1)
     saved = workflow["store"].load().sections["R1"]
-    assert saved.checkpoint == "retrieval"
+    assert saved.checkpoint == "gate"
     assert len(saved.query_plan["queries"]) <= 4
     assert saved.retrieval_trace["candidates"]
     get_count = corpus[1]["get"]
@@ -182,7 +182,8 @@ def test_multi_query_targeted_update_preserves_other_sections(workflow, corpus, 
     for key in ("R1", "R3"):
         assert after.sections[key].model_dump() == before.sections[key].model_dump()
     assert after.sections["R2"].revision == before.sections["R2"].revision + 1
-    assert len(workflow["calls"]["llm"]) == 4
+    assert len(workflow["calls"]["llm"]) == 0
+    assert all(s.finding.status == "insufficient_evidence" for s in after.sections.values())
 
 
 def test_review_invalid_planner_json_records_fallback_and_call(workflow, corpus, monkeypatch):

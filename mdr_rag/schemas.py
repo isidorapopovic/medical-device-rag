@@ -28,14 +28,24 @@ class FindingClaim(BaseModel):
     evidence: list[QuotedReference] = Field(default_factory=list)
 
 
+class ObligationCoverage(BaseModel):
+    obligation_id: str
+    status: Literal["supported", "partial", "not_addressed", "uncertain"]
+    evidence_ids: list[str] = Field(default_factory=list)
+    addressed_qualifiers: list[str] = Field(default_factory=list)
+    explanation: str
+    verification: Literal["model_self_assessed_raw_citations_only"] = "model_self_assessed_raw_citations_only"
+
+
 class Finding(BaseModel):
-    status: Literal["supported", "partial", "not_found", "needs_review", "possibly_not_applicable"]
+    status: Literal["supported", "partial", "not_found", "needs_review", "possibly_not_applicable", "insufficient_evidence"]
     explanation: str
     evidence_ids: list[str]
     missing_information: list[str]
     recommended_actions: list[str]
     applicability_reason: str
     claims: list[FindingClaim] = Field(default_factory=list)
+    obligation_coverage: list[ObligationCoverage] = Field(default_factory=list)
 
 
 class Answer(BaseModel):

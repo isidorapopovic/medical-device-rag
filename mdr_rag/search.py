@@ -154,7 +154,12 @@ def hybrid_search(
     backend: str | None = None,
 ) -> list[dict]:
     """Compatibility single-query interface over the shared candidate API."""
-    return retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank, backend=backend)["passages"]
+    result = retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank, backend=backend)
+    recorder = ACTIVE_RECORDER.get()
+    if result["trace"]["corpus_size"] == 0 and recorder is not None and recorder.manifest and any(
+            item["kind"] == kind for item in recorder.manifest.get("files", [])):
+        raise RuntimeError("Indexed corpus is empty despite a populated manifest; verify the existing index without rebuilding it automatically")
+    return result["passages"]
 
 
 _BM25_CACHE = {}
@@ -253,7 +258,7 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
         "queries": query_lists, "candidates": [dict(id=idx, fusion_score=scores[idx],
             provenance=provenance[idx]) for idx in sorted(scores, key=lambda idx: (-scores[idx], idx))],
         "merged_ids": winners, "selected_ids": [p["id"] for p in passages],
-        "mode": mode, "per_backend": per_backend, "merged_limit": merged_limit,
+        "mode": mode, "per_backend": per_backend, "merged_limit": merged_limit, "corpus_size": len(ids),
         "reranked": bool(rerank), "reranker": diagnostics}).model_dump()}
 
 

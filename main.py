@@ -61,6 +61,11 @@ def main():
     evaluate.add_argument("--gold", default=None)
     evaluate.add_argument("--ks", type=int, nargs="+", default=[3, 5, 10])
     evaluate.add_argument("--out", default=None)
+    evaluate.add_argument("--gate-labels", help="Evaluate reviewed scored runs on held-out answerable/unanswerable cases")
+    evaluate.add_argument("--gate-calibration", help="Frozen calibration artifact for --gate-labels")
+    calibrate = subs.add_parser("calibrate-gate", help="Tune a passage relevance threshold from reviewed saved runs")
+    calibrate.add_argument("--labels", required=True)
+    calibrate.add_argument("--out", required=True)
     graph = subs.add_parser("graph", help="HTML citation provenance graph from assessment")
     graph.add_argument("--assessment", default=None)
     graph.add_argument("--out", default=None)
@@ -105,7 +110,18 @@ def main():
         elif args.command == "visualize-embeddings":
             from mdr_rag.embedding_viz import visualize_embeddings
             visualize_embeddings(args.sample, args.query, args.out)
+        elif args.command == "calibrate-gate":
+            from mdr_rag.gate_evaluation import calibrate_labels
+            calibrate_labels(args.labels, args.out)
         elif args.command == "evaluate":
+            if args.gate_labels:
+                if not args.gate_calibration or not args.out:
+                    raise ValueError("--gate-labels requires --gate-calibration and --out")
+                from mdr_rag.gate_evaluation import evaluate_labels
+                evaluate_labels(args.gate_labels, args.gate_calibration, args.out)
+                return 0
+            if args.gate_calibration:
+                raise ValueError("--gate-calibration requires --gate-labels")
             from mdr_rag.evaluation import evaluate
             from mdr_rag.core import STATE
             from mdr_rag.source_buffer import EvidenceRun, recording

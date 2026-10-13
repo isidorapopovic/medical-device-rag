@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from .core import digest
 from .schemas import Finding
 from .query_planner import QueryPlan
 from .retrieval_trace import RetrievalTrace
+from .evidence_gate import GateDecision
 from .source_buffer import ClaimEvidenceLink, ModelCallTrace, SourceBuffer, SourcePassage
 
 
@@ -63,12 +65,13 @@ class Dependencies(StateModel):
     corpus: str
     query: str
     retrieval: str
+    gate: str = ""
     review: str
     validation: str
 
 
-Checkpoint = Literal["pending", "applicability", "queries", "retrieval", "draft", "completed"]
-CHECKPOINTS = ["pending", "applicability", "queries", "retrieval", "draft", "completed"]
+Checkpoint = Literal["pending", "applicability", "queries", "retrieval", "gate", "draft", "completed"]
+CHECKPOINTS = ["pending", "applicability", "queries", "retrieval", "gate", "draft", "completed"]
 
 
 class RequirementSection(StateModel):
@@ -85,6 +88,7 @@ class RequirementSection(StateModel):
     queries: list[str] = Field(default_factory=list)
     query_plan: dict | None = None
     retrieval_trace: dict | None = None
+    evidence_gate: GateDecision | None = None
     passages: list[RetrievedPassage] = Field(default_factory=list)
     retrieved_buffer_ids: list[str] = Field(default_factory=list)
     legal_anchor: ClaimEvidenceLink | None = None
@@ -100,7 +104,7 @@ class RequirementSection(StateModel):
     failure_reason: str | None = None
     attempt_count: int = Field(default=0, ge=0)
     stale_reasons: list[str] = Field(default_factory=list)
-    audit_status: Literal["not_performed", "identifier_checked_only", "legacy_unverified", "raw_spans_checked"] = "not_performed"
+    audit_status: Literal["not_performed", "identifier_checked_only", "legacy_unverified", "raw_spans_checked", "gate_abstained"] = "not_performed"
     human_annotations: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -113,9 +117,13 @@ class RequirementSection(StateModel):
             trace = RetrievalTrace.model_validate(self.retrieval_trace)
             if [q.query for q in trace.queries] != self.queries:
                 raise ValueError("Saved retrieval provenance does not match section queries")
+        if self.evidence_gate is not None and {p.id for p in self.evidence_gate.passages} != {p.id for p in self.passages}:
+            raise ValueError("Gate IDs do not match saved retrieval candidates")
+        if self.checkpoint == "gate" and self.evidence_gate is None:
+            raise ValueError("Gate checkpoint requires saved decisions")
         if self.requirement_hash != fingerprint(self.requirement.model_dump()):
             raise ValueError("Requirement hash does not match its saved content")
-        if self.checkpoint in {"queries", "retrieval", "draft", "completed"} and not self.queries:
+        if self.checkpoint in {"queries", "retrieval", "gate", "draft", "completed"} and not self.queries:
             if self.audit_status != "legacy_unverified":
                 raise ValueError("Query checkpoint requires saved queries")
         if self.checkpoint == "draft" and self.draft_finding is None:
@@ -220,6 +228,18 @@ def validate_assessment_id(value: str):
         raise ValueError("assessment_id must be 1-80 letters, digits, underscores or hyphens")
 
 
+def atomic_replace(source, destination):
+    """Retry brief Windows reader/antivirus locks; never bypass persistent denial."""
+    for attempt in range(5):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 def atomic_write(path: Path, text: str):
     """Flush a same-directory temporary file before atomic replacement."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -229,7 +249,7 @@ def atomic_write(path: Path, text: str):
             output.write(text)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(name, path)
+        atomic_replace(name, path)
     finally:
         if os.path.exists(name):
             os.unlink(name)
@@ -329,7 +349,7 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
     # Earliest valid checkpoint, before the affected operation.
     retain = {"profile": "pending", "requirement": "applicability",
               "query": "applicability", "corpus": "queries", "retrieval": "queries",
-              "review": "retrieval", "validation": "draft"}
+              "gate": "retrieval", "review": "gate", "validation": "draft"}
     earliest = min([CHECKPOINTS.index(section.checkpoint)] +
                    [CHECKPOINTS.index(retain[key]) for key in changed])
     section.checkpoint = CHECKPOINTS[earliest]
@@ -340,7 +360,9 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
         section.passages = []
         section.retrieval_trace = None
         section.retrieved_buffer_ids = []
-    if earliest < 4:
+    if earliest < CHECKPOINTS.index("gate"):
+        section.evidence_gate = None
+    if earliest < CHECKPOINTS.index("draft"):
         section.draft_finding = None
         section.draft_call_id = None
         section.claim_links = []
@@ -409,6 +431,7 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
             "legal_anchor_issue": published.get("legal_anchor_issue", "legacy_raw_span_unverified" if not anchor else None),
             "query_plan": published.get("query_plan"),
             "retrieval_trace": published.get("retrieval_trace"),
+            "evidence_gate": published.get("evidence_gate"),
             "rerank_citation_coverage": published.get("rerank_citation_coverage", []),
             "retrieved_buffer_ids": published.get("retrieved_buffer_ids", []),
             "draft_call_id": published.get("draft_call_id"),
@@ -418,6 +441,8 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
     scope = state.legal_scope
     return {
         "assessment_id": state.assessment_id, "state_revision": state.revision,
+        "evidence_gate_mode": state.config.get("gate_mode", "not_performed_legacy"),
+        "calibration_fingerprint": state.config.get("calibration") if state.config.get("gate_mode") else None,
         "generated_at_utc": state.updated_at,
         "model": state.config.get("llm_model", "unknown (legacy)"),
         "legal_version_label": scope["legal_version_label"],
@@ -432,7 +457,8 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
         "execution_counts": state.execution_counts,
         "sections": {key: {"execution_status": s.execution_status, "checkpoint": s.checkpoint,
                            "revision": s.revision, "stale_reasons": s.stale_reasons,
-                           "failure_reason": s.failure_reason, "audit_status": s.audit_status}
+                           "failure_reason": s.failure_reason, "audit_status": s.audit_status,
+                           "evidence_gate": s.evidence_gate.model_dump() if s.evidence_gate else None}
                      for key, s in state.sections.items()},
         "findings": rows, "limitations": state.limitations,
         "provenance": {key: value for key, value in state.provenance.items() if key != "original_report"}
@@ -454,7 +480,7 @@ def export_report(state: ReportState, destination: Path, historical: bool = Fals
         try:
             write_markdown(report, temporary)
             atomic_write(Path(destination) / "assessment.json", json.dumps(report, indent=2, ensure_ascii=False))
-            os.replace(temporary, Path(destination) / "assessment.md")
+            atomic_replace(temporary, Path(destination) / "assessment.md")
         finally:
             temporary.unlink(missing_ok=True)
     return report
