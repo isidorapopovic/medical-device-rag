@@ -1,7 +1,7 @@
 """Versioned assessment snapshots, guarded mutations and compatibility exports.
 
-The current checkpoints describe the existing pipeline, not the later six-role
-orchestration or an independent semantic audit.
+Checkpoints include structured drafting and a separate semantic review.
+Model review is procedural validation, not a guarantee of legal correctness.
 """
 import json
 import os
@@ -17,7 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .core import digest
-from .schemas import Finding
+from .schemas import Finding, StructuredFinding
 from .query_planner import QueryPlan
 from .retrieval_trace import RetrievalTrace
 from .evidence_gate import GateDecision
@@ -70,8 +70,8 @@ class Dependencies(StateModel):
     validation: str
 
 
-Checkpoint = Literal["pending", "applicability", "queries", "retrieval", "gate", "draft", "completed"]
-CHECKPOINTS = ["pending", "applicability", "queries", "retrieval", "gate", "draft", "completed"]
+Checkpoint = Literal["pending", "applicability", "queries", "retrieval", "gate", "draft", "validation", "completed"]
+CHECKPOINTS = ["pending", "applicability", "queries", "retrieval", "gate", "draft", "validation", "completed"]
 
 
 class RequirementSection(StateModel):
@@ -97,6 +97,11 @@ class RequirementSection(StateModel):
     draft_call_id: str | None = None
     claim_links: list[ClaimEvidenceLink] = Field(default_factory=list)
     citation_issues: list[str] = Field(default_factory=list)
+    structured_draft: StructuredFinding | None = None
+    validated_finding: Finding | None = None
+    validation_records: list[dict] = Field(default_factory=list)
+    rejected_drafts: list[dict] = Field(default_factory=list)
+    repair_attempts: int = Field(default=0, ge=0, le=1)
     draft_finding: Finding | None = None
     finding: Finding | None = None
     finding_history: list[dict] = Field(default_factory=list)
@@ -104,7 +109,7 @@ class RequirementSection(StateModel):
     failure_reason: str | None = None
     attempt_count: int = Field(default=0, ge=0)
     stale_reasons: list[str] = Field(default_factory=list)
-    audit_status: Literal["not_performed", "identifier_checked_only", "legacy_unverified", "raw_spans_checked", "gate_abstained"] = "not_performed"
+    audit_status: Literal["not_performed", "identifier_checked_only", "legacy_unverified", "raw_spans_checked", "gate_abstained", "semantic_checked", "validation_failed"] = "not_performed"
     human_annotations: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -123,11 +128,13 @@ class RequirementSection(StateModel):
             raise ValueError("Gate checkpoint requires saved decisions")
         if self.requirement_hash != fingerprint(self.requirement.model_dump()):
             raise ValueError("Requirement hash does not match its saved content")
-        if self.checkpoint in {"queries", "retrieval", "gate", "draft", "completed"} and not self.queries:
+        if self.checkpoint in {"queries", "retrieval", "gate", "draft", "validation", "completed"} and not self.queries:
             if self.audit_status != "legacy_unverified":
                 raise ValueError("Query checkpoint requires saved queries")
         if self.checkpoint == "draft" and self.draft_finding is None:
             raise ValueError("Draft checkpoint requires draft_finding")
+        if self.checkpoint == "validation" and self.validated_finding is None:
+            raise ValueError("Validation checkpoint requires a validated result")
         if self.execution_status == "completed" and (self.checkpoint != "completed" or self.finding is None):
             raise ValueError("Completed section requires a published finding")
         if self.checkpoint == "completed" and self.finding is None:
@@ -149,7 +156,7 @@ class StageEvent(StateModel):
 
 
 class ReportState(StateModel):
-    schema_version: Literal[2] = 2
+    schema_version: Literal[3] = 3
     assessment_id: str
     revision: int = Field(default=0, ge=0)
     created_at: str = Field(default_factory=timestamp)
@@ -206,6 +213,28 @@ class ReportState(StateModel):
                 if trace is None or trace.outcome != "completed":
                     raise ValueError("Claim links require a completed bound draft call")
                 buffer.validate_link(link, presented=trace.presented)
+            if section.execution_status == "completed" and section.audit_status == "semantic_checked":
+                from .claim_audit import CitationAuditor, section_bindings, validation_policy, render_validated_finding
+                from .schemas import FindingReview
+                trace = next((c for c in section.model_calls if c.call_id == section.draft_call_id), None)
+                if trace is None or section.structured_draft is None or section.evidence_gate is None:
+                    raise ValueError("Semantic publication requires a bound structured draft")
+                revision, context = section_bindings(section, buffer, trace.presented, self.config)
+                records = [r for r in section.validation_records if r.get("outcome") == "completed"
+                           and (r.get("claim_revision"), r.get("context_hash")) == (revision, context)]
+                if not records:
+                    raise ValueError("Semantic publication lacks a matching completed review")
+                record = records[-1]
+                reviewer = next((c for c in section.model_calls if c.call_id == record.get("call_id")), None)
+                if (reviewer is None or reviewer.outcome != "completed" or reviewer.stage != "review_semantic"
+                        or reviewer.presented != trace.presented):
+                    raise ValueError("Semantic review lacks its separate completed source context")
+                verified_links, issues = validation_policy(section.structured_draft, FindingReview.model_validate(record["review"]),
+                    CitationAuditor(buffer, trace.presented), revision, context,
+                    [o.model_dump() for o in section.evidence_gate.obligations], section.applicability)
+                rendered = render_validated_finding(section.structured_draft, section.applicability_reason, verified_links)
+                if issues or section.claim_links != verified_links or rendered != section.finding:
+                    raise ValueError("Published finding does not match its validated claim revision")
             for revision in section.finding_history:
                 if revision.get("legal_anchor"):
                     buffer.validate_link(revision["legal_anchor"])
@@ -362,7 +391,11 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
         section.retrieved_buffer_ids = []
     if earliest < CHECKPOINTS.index("gate"):
         section.evidence_gate = None
+    if earliest < CHECKPOINTS.index("validation"):
+        section.validated_finding = None
     if earliest < CHECKPOINTS.index("draft"):
+        section.structured_draft = None
+        section.repair_attempts = 0
         section.draft_finding = None
         section.draft_call_id = None
         section.claim_links = []
@@ -379,13 +412,15 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
 
 
 def decode_state(data) -> ReportState:
-    if not isinstance(data, dict) or type(data.get("schema_version")) is not int or data["schema_version"] not in {1, 2}:
+    if not isinstance(data, dict) or type(data.get("schema_version")) is not int or data["schema_version"] not in {1, 2, 3}:
         raise ValueError("Missing or unsupported schema_version")
-    if data["schema_version"] == 1:
+    if data["schema_version"] in {1, 2}:
         # Read-only schema upgrade: archived bytes stay intact. No missing source
         # snapshots/model inputs/quotes are invented or marked newly verified.
-        data = dict(data, schema_version=2)
-        data["provenance"] = dict(data.get("provenance", {}), state_schema_origin=1)
+        origin = data["schema_version"]
+        data = dict(data, schema_version=3)
+        data["provenance"] = dict(data.get("provenance", {}))
+        data["provenance"].setdefault("state_schema_origin", origin)
     try:
         return ReportState.model_validate(data)
     except ValueError as exc:
@@ -437,6 +472,10 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
             "draft_call_id": published.get("draft_call_id"),
             "claim_links": published.get("claim_links", []),
             "citation_issues": published.get("citation_issues", []),
+            "semantic_validation": ({**published["semantic_validation"], "records": [
+                {k: v for k, v in record.items() if k != "review"}
+                for record in published["semantic_validation"].get("records", [])]}
+                if published.get("semantic_validation") else None),
         })
     scope = state.legal_scope
     return {

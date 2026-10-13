@@ -1,6 +1,6 @@
 """Strict, limited output vocabularies for extraction and assessment."""
 from typing import Literal
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictBool
 
 
 class RequirementCandidate(BaseModel):
@@ -23,6 +23,9 @@ class QuotedReference(BaseModel):
 
 
 class FindingClaim(BaseModel):
+    role: Literal["legal_duty", "device_fact", "mixed", "applicability", "recommendation"] = "device_fact"
+    category: Literal["assessment", "reason", "missing_information", "recommended_action", "applicability"] = "assessment"
+    obligation_ids: list[str] = Field(default_factory=list)
     claim_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
     evidence: list[QuotedReference] = Field(default_factory=list)
@@ -78,3 +81,54 @@ class RerankScore(BaseModel):
 
 class RerankBatch(BaseModel):
     scores: list[RerankScore]
+
+
+class StructuredClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    claim_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    role: Literal["legal_duty", "device_fact", "mixed", "applicability", "recommendation"]
+    category: Literal["assessment", "reason", "missing_information", "recommended_action", "applicability"]
+    obligation_ids: list[str]
+    evidence: list[QuotedReference]
+
+
+class StructuredFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["supported", "partial", "not_found", "needs_review", "possibly_not_applicable", "insufficient_evidence"]
+    claims: list[StructuredClaim] = Field(min_length=1)
+    obligation_coverage: list[ObligationCoverage]
+
+
+class ClaimVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    claim_id: str
+    verdict: Literal["supported", "contradicted", "insufficient"]
+    reason: str = Field(min_length=1)
+    evidence: list[QuotedReference]
+
+
+class CoverageVerdict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    obligation_id: str
+    verdict: Literal["supported", "contradicted", "insufficient"]
+    claim_ids: list[str]
+    covered_qualifiers: list[str]
+    reason: str = Field(min_length=1)
+
+
+class FindingReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    claim_revision: str
+    context_hash: str
+    claims: list[ClaimVerdict]
+    coverage: list[CoverageVerdict]
+    status_supported: StrictBool
+    applicability_supported: StrictBool
+
+
+class StructuredAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    claims: list[StructuredClaim] = Field(min_length=1)
+    source_ids: list[str]
+    limitations: list[str]

@@ -7,8 +7,8 @@ import pytest
 from mdr_rag import pipeline, review_state, search, reranking, report_state
 from mdr_rag.evidence_gate import Calibration, GateContext, fingerprint, screen, settings, gate_context
 from mdr_rag.gate_evaluation import tune, metrics, calibrate_labels, evaluate_labels, load_labeled_runs
-from mdr_rag.schemas import Finding, ObligationCoverage
-from test_report_state import workflow
+from mdr_rag.schemas import Finding, ObligationCoverage, FindingReview
+from test_report_state import workflow, reviewer
 from test_reranking import FakeScorer, identity
 
 
@@ -57,9 +57,10 @@ def gated(workflow, monkeypatch):
     original_llm = workflow["llm"]
     prompts = []
     def draft(rules, prompt, schema):
+        if schema is FindingReview:
+            return reviewer(prompt)
         prompts.append(prompt)
         finding = original_llm(rules, prompt, schema)
-        finding.evidence_ids = ["D-2"]
         finding.claims[0].evidence[0].source_id = "D-2"
         finding.claims[0].evidence[0].exact_quote = "Other relevant passage"
         finding.obligation_coverage = [ObligationCoverage(obligation_id="R1", status="supported", evidence_ids=["D-2"], explanation="Synthetic coverage")]
@@ -183,8 +184,8 @@ def test_passing_scores_do_not_cover_missing_qualifiers(gated):
     gated[0]["draft"]["requirements"][0]["qualifiers"] = ["specified explicit qualifier"]
     gated[0]["draft_path"].write_text(json.dumps(gated[0]["draft"]))
     state = pipeline.run_review(assessment_id="demo", limit=1)
-    assert state.sections["R1"].finding.status == "partial"
-    assert state.sections["R1"].finding.obligation_coverage[0].status == "partial"
+    assert state.sections["R1"].finding.status == "needs_review"
+    assert "status_overstates_atomic_coverage" in state.sections["R1"].citation_issues
 
 
 def test_missing_atomic_coverage_needs_review(gated, monkeypatch):

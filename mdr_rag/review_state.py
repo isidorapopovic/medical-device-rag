@@ -1,4 +1,4 @@
-"""Checkpoint the existing review workflow without adding later-stage agents."""
+"""Durable evidence-gated review with structured claims and separate validation."""
 import json
 import inspect
 import os
@@ -11,12 +11,14 @@ from .report_state import (
     invalidate, timestamp,
     decode_state,
 )
-from .schemas import Finding
+from .schemas import Finding, StructuredFinding
 from .query_planner import plan_queries, PLANNER_RULES, PlannerPersistenceError, PlannerSelection
 from .search import reranking_enabled
 from .reranking import backend_selection, reranker_identity, requirement_rerank_query, citation_rerank_coverage
 from . import search
-from .review_evidence import prepare_legal_anchor, validate_finding, validate_obligation_coverage
+from .review_evidence import prepare_legal_anchor
+from .claim_audit import render_finding, REVIEWER_RULES, CitationAuditor, validation_policy
+from .review_validation import validate_section, REPAIR_RULES
 from .evidence_gate import settings as gate_settings, gate_context, obligation_inventory, screen
 from .source_buffer import EvidenceRecorder, SourceBuffer, recording
 
@@ -29,7 +31,12 @@ evidence; needs_review = ambiguous or contradictory; insufficient_evidence = ins
 applicability requires expert verification. No status equals legal compliance.
 Do not infer applicability from lack of evidence. Mention insufficient context.
 Cite ONLY provided SOURCE_IDs in evidence_ids. Never fabricate source IDs.
-Return a claims inventory: one claim_id and text per factual claim, with source_id,
+Return StructuredFinding: status, claims and obligation_coverage. Every substantive
+assessment, reason, missing-information assertion and recommended action must be
+a claim, with a unique claim_id, text, role, category and obligation_ids. No free
+narrative is published outside these claims. Pure recommendations must imply no
+unverified device/document facts; factual advice uses device_fact or mixed roles.
+Return one claim_id and text per claim, with source_id,
 exact_quote, purpose and optional raw start/end character offsets for every cited span.
 Quotes must be literal substrings of supplied text. Repeated quotes require explicit
 chosen offsets. Cite legal text as legal_basis and device text as device_support.
@@ -51,11 +58,11 @@ LIMITATIONS = [
     "Only selected PDF pages and uploaded device evidence were considered.",
     "Retrieval can miss relevant passages; missing evidence is not proof of non-compliance.",
     "Applicability, device classification and all final conclusions require specialist validation.",
-    "Stage 2 verifies raw-span provenance and model-context membership, not semantic entailment or full claim coverage.",
+    "A separate local model reviews each inventoried claim; correlated model errors remain possible. This is not a guarantee of entailment or legal coverage.",
 ]
 QUERY_VERSION = "bounded-source-constrained-intents-v3"
 RETRIEVAL_VERSION = "two-level-rrf-scored-rerank-v4"
-VALIDATION_VERSION = "raw-provenance-obligation-coverage-v5"
+VALIDATION_VERSION = "claim-inventory-semantic-policy-v6"
 EXTRACTION_VERSION = "character-2000-overlap250-v1"
 REVIEW_INPUT = (
     "UNVERIFIED DEVICE PROFILE:\n{profile}\n\n"
@@ -65,6 +72,11 @@ REVIEW_INPUT = (
     "ATOMIC OBLIGATIONS:\n{obligations}\n\n"
     "RETRIEVED DEVICE EXCERPTS:\n{evidence}"
 )
+
+
+def reviewer_schema():
+    from .schemas import FindingReview
+    return FindingReview.model_json_schema()
 
 
 def configuration(k: int) -> dict:
@@ -103,8 +115,8 @@ def configuration(k: int) -> dict:
             "num_ctx": ollama_num_ctx(), "reranker_backend": backend, "reranker_identity": identity,
             "extraction_version": EXTRACTION_VERSION,
             "query_version": QUERY_VERSION, "retrieval_version": RETRIEVAL_VERSION,
-            "review_prompt_hash": fingerprint([REVIEW_RULES, REVIEW_INPUT, Finding.model_json_schema()]),
-            "validation_version": VALIDATION_VERSION}
+            "review_prompt_hash": fingerprint([REVIEW_RULES, REVIEW_INPUT, StructuredFinding.model_json_schema()]),
+            "validation_version": fingerprint([VALIDATION_VERSION, REVIEWER_RULES, REPAIR_RULES, reviewer_schema(), inspect.getsource(CitationAuditor), inspect.getsource(validation_policy), inspect.getsource(validate_section)])}
 
 
 def corpus_hash(manifest: dict) -> str:
@@ -282,21 +294,32 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
         # Save binding to this call before inference, even if inference is interrupted.
         recorder.persist()
         try:
-            section.draft_finding = app.llm_parse(REVIEW_RULES, prompt, Finding)
+            output = app.llm_parse(REVIEW_RULES, prompt, StructuredFinding)
+            section.structured_draft = StructuredFinding.model_validate(output.model_dump() if hasattr(output, "model_dump") else output)
+            section.draft_finding = render_finding(section.structured_draft, section.applicability_reason)
         except Exception:
             recorder.finish(trace, "failed")
             raise
         # Normal stage checkpoint saves output and completed trace together.
         trace.outcome = "completed"
+    elif stage == "validation":
+        if not section.evidence_gate.draft_ids:
+            section.validated_finding = section.draft_finding.model_copy(deep=True)
+        else:
+            def persist_validation():
+                state.source_buffer = buffer.snapshots
+                persist_trace()
+            recorder.persist = persist_validation
+            recorder.retrieved = section.retrieved_buffer_ids
+            section.validated_finding = validate_section(section, buffer, recorder, config, app)
     elif stage == "completed":
         if not section.evidence_gate.draft_ids:
             finding = section.draft_finding.model_copy(deep=True)
             section.claim_links, section.citation_issues = [], []
             section.audit_status = "gate_abstained"
         else:
-            finding = validate_finding(section, buffer, app)
-            finding = validate_obligation_coverage(section, finding)
-            section.audit_status = "raw_spans_checked"
+            finding = section.validated_finding.model_copy(deep=True)
+            section.audit_status = "validation_failed" if section.citation_issues else "semantic_checked"
         section.finding = finding
         section.revision += 1
         section.finding_updated_at = timestamp()
@@ -313,6 +336,8 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
             "legal_anchor_issue": section.legal_anchor_issue,
             "claim_links": [link.model_dump() for link in section.claim_links],
             "citation_issues": section.citation_issues,
+            "semantic_validation": {"policy": VALIDATION_VERSION, "repair_attempts": section.repair_attempts,
+                "records": section.validation_records, "rejected_draft_count": len(section.rejected_drafts)},
             "rerank_citation_coverage": citation_rerank_coverage(section.claim_links, section.retrieval_trace)})
         section.execution_status = "completed"
         section.stale_reasons = []
@@ -376,6 +401,8 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
             section.queries, section.passages, section.draft_finding = [], [], None
             section.query_plan, section.retrieval_trace = None, None
             section.evidence_gate = None
+            section.structured_draft, section.validated_finding = None, None
+            section.repair_attempts = 0
             section.retrieved_buffer_ids, section.claim_links = [], []
             section.draft_call_id = None
             section.execution_status = "stale"

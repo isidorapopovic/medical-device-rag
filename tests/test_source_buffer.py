@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 
 from mdr_rag import core, pipeline, report_state, review_state, search
-from mdr_rag.schemas import Finding, FindingClaim, QuotedReference, RequirementBatch, RequirementCandidate
+from mdr_rag.schemas import FindingReview, Finding, FindingClaim, QuotedReference, RequirementBatch, RequirementCandidate
 from mdr_rag.source_buffer import (
     ACTIVE_RECORDER, EvidenceRun, SourceBuffer, call_trace, normalized_offsets, recording,
 )
-from test_report_state import workflow  # Reuse the isolated synthetic workflow fixture.
+from test_report_state import workflow, structured, reviewer, ask_fixture  # Reuse the isolated synthetic workflow fixture.
 
 
 def record(text="Synthetic maintenance records", *, key="D-1", kind="device", source=None,
@@ -19,11 +19,11 @@ def record(text="Synthetic maintenance records", *, key="D-1", kind="device", so
 
 
 def claim_finding(quote="Synthetic maintenance records", *, source_id="D-1", offsets=None):
-    return Finding(status="supported", explanation="Synthetic claim", evidence_ids=[source_id],
+    return structured(Finding(status="supported", explanation="Synthetic claim", evidence_ids=[source_id],
                    missing_information=[], recommended_actions=[], applicability_reason="Unverified",
                    claims=[FindingClaim(claim_id="C1", text="Synthetic claim", evidence=[QuotedReference(
                        source_id=source_id, exact_quote=quote, start=offsets[0] if offsets else None,
-                       end=offsets[1] if offsets else None)])])
+                       end=offsets[1] if offsets else None)])]))
 
 
 def test_snapshots_are_content_addressed_frozen_and_persistent(tmp_path):
@@ -219,7 +219,7 @@ def test_answer_abstains_on_a_normalized_but_non_raw_quote(tmp_path, monkeypatch
     responses = iter([Answer(answer="A claim", source_ids=["L-1"], limitations=[]),
         AnswerSupportVerification(claims=[AnswerClaim(claim="A claim", supported=True, evidence=[
             ClaimEvidence(source_id="L-1", exact_quote="maintain risk records")])])])
-    monkeypatch.setattr(pipeline, "llm_parse", lambda *args: next(responses))
+    monkeypatch.setattr(pipeline, "llm_parse", lambda rules, prompt, schema: ask_fixture(next(responses), prompt, quote="Manufacturer must maintain\n risk records."))
     pipeline.run_ask("Synthetic question")
     assert "Insufficient evidence to provide a fully source-supported answer" in capsys.readouterr().out
     ledger = json.loads(next((tmp_path / "state" / "evidence_runs").glob("ask-*/trace.json")).read_text())
@@ -246,7 +246,7 @@ def test_three_evidence_sets_are_saved_separately(workflow, monkeypatch):
     assert section.claim_links[0].chunk_id == "D-1"
     assert section.legal_anchor.kind == "legal"
     assert section.finding.status == "supported"
-    assert section.audit_status == "raw_spans_checked"
+    assert section.audit_status == "semantic_checked"
 
 
 def test_retrieved_hash_mismatch_fails_before_drafting(workflow, monkeypatch):
@@ -263,12 +263,12 @@ def test_retrieved_hash_mismatch_fails_before_drafting(workflow, monkeypatch):
     ("invented text", "D-1"), ("Synthetic maintenance records", "D-invented"),
     ("Synthetic  maintenance records", "D-1")])
 def test_invalid_claim_quotes_are_not_published_as_verified_evidence(workflow, monkeypatch, quote, source):
-    monkeypatch.setattr(pipeline, "llm_parse", lambda *args: claim_finding(quote, source_id=source))
+    monkeypatch.setattr(pipeline, "llm_parse", lambda rules, prompt, schema: reviewer(prompt) if schema is FindingReview else claim_finding(quote, source_id=source))
     state = pipeline.run_review(assessment_id="demo", limit=1)
     section = state.sections["R1"]
     assert section.finding.status == "needs_review"
     assert not section.claim_links
-    assert not section.finding.claims[0].evidence
+    assert not section.finding.claims
     assert not section.finding.evidence_ids
     assert section.draft_finding.claims[0].evidence[0].exact_quote == quote
 
@@ -276,7 +276,7 @@ def test_invalid_claim_quotes_are_not_published_as_verified_evidence(workflow, m
 def test_quote_outside_truncated_model_context_is_rejected(workflow, monkeypatch):
     long_text = "a" * 2250 + " unseen maintenance evidence"
     monkeypatch.setattr(pipeline, "hybrid_search", lambda *args, **kwargs: [record(long_text, sha="device-hash")])
-    monkeypatch.setattr(pipeline, "llm_parse", lambda *args: claim_finding("unseen maintenance evidence"))
+    monkeypatch.setattr(pipeline, "llm_parse", lambda rules, prompt, schema: reviewer(prompt) if schema is FindingReview else claim_finding("unseen maintenance evidence"))
     state = pipeline.run_review(assessment_id="demo", limit=1)
     section = state.sections["R1"]
     assert section.finding.status == "needs_review"
@@ -290,7 +290,7 @@ def test_repeated_claim_quote_requires_model_offsets(workflow, monkeypatch):
     bad = pipeline.run_review(assessment_id="demo", limit=1)
     assert bad.sections["R1"].finding.status == "needs_review"
     start = text.rfind("Synthetic maintenance records")
-    monkeypatch.setattr(pipeline, "llm_parse", lambda *args: claim_finding(offsets=(start, start + 29)))
+    monkeypatch.setattr(pipeline, "llm_parse", lambda rules, prompt, schema: reviewer(prompt) if schema is FindingReview else claim_finding(offsets=(start, start + 29)))
     good = pipeline.run_review(assessment_id="demo", requirement_id="R1", refresh=True)
     assert good.sections["R1"].finding.status == "supported"
     assert good.sections["R1"].claim_links[0].start == start
@@ -366,7 +366,7 @@ def test_read_only_schema_v1_upgrade_never_invents_raw_provenance(workflow):
     workflow["store"].path.write_text(json.dumps(data), encoding="utf-8")
     original = workflow["store"].path.read_bytes()
     loaded = workflow["store"].load()
-    assert loaded.schema_version == 2
+    assert loaded.schema_version == 3
     assert not loaded.source_buffer
     assert not loaded.sections["R1"].claim_links
     assert loaded.sections["R1"].audit_status == "identifier_checked_only"

@@ -7,7 +7,27 @@ import pytest
 from mdr_rag import pipeline, report_state, review_state
 from mdr_rag.report_state import StateStore, export_report, import_legacy
 from mdr_rag.requirement_identity import assign_identity
-from mdr_rag.schemas import Finding, FindingClaim, QuotedReference
+from mdr_rag.schemas import Finding, FindingClaim, QuotedReference, StructuredFinding, StructuredClaim, FindingReview, ClaimVerdict, CoverageVerdict, ObligationCoverage
+
+
+def structured(finding, key="R1"):
+    return StructuredFinding(status=finding.status,
+        claims=[StructuredClaim(**(c.model_dump() | {"obligation_ids": c.obligation_ids or [key]})) for c in finding.claims],
+        obligation_coverage=finding.obligation_coverage or [ObligationCoverage(
+            obligation_id=key, status="supported", evidence_ids=finding.evidence_ids,
+            explanation="Synthetic coverage")])
+
+
+def reviewer(prompt):
+    data = json.loads(prompt.split("\nRAW_SOURCE_SNAPSHOTS:")[0])
+    draft = data["draft"]
+    return FindingReview(claim_revision=data["claim_revision"], context_hash=data["context_hash"],
+        claims=[ClaimVerdict(claim_id=c["claim_id"], verdict="supported", reason="Synthetic fixture",
+                            evidence=c["evidence"]) for c in draft["claims"]],
+        coverage=[CoverageVerdict(obligation_id=o["obligation_id"], verdict="supported",
+            claim_ids=[c["claim_id"] for c in draft["claims"]], covered_qualifiers=o["qualifiers"],
+            reason="Synthetic fixture") for o in data["atomic_obligations"]],
+        status_supported=True, applicability_supported=True)
 
 
 def requirement(key):
@@ -58,11 +78,14 @@ def workflow(monkeypatch, tmp_path):
             "block": 1, "kind": "device"}}]
 
     def llm(rules, prompt, schema):
+        if schema is FindingReview:
+            return reviewer(prompt)
         calls["llm"].append(prompt)
-        return Finding(status="supported", explanation="Synthetic evidence only", evidence_ids=["D-1"],
+        key = json.loads(prompt.split("ATOMIC OBLIGATIONS:\n")[1].split("\n\nRETRIEVED")[0])[0]["obligation_id"] if "ATOMIC OBLIGATIONS:" in prompt else json.loads(prompt.split("\nRAW_SOURCE_SNAPSHOTS:")[0])["atomic_obligations"][0]["obligation_id"]
+        return structured(Finding(status="supported", explanation="Synthetic evidence only", evidence_ids=["D-1"],
                        missing_information=[], recommended_actions=[], applicability_reason="Unverified",
                        claims=[FindingClaim(claim_id="C1", text="Synthetic evidence only", evidence=[
-                           QuotedReference(source_id="D-1", exact_quote="Synthetic maintenance records")])])
+                           QuotedReference(source_id="D-1", exact_quote="Synthetic maintenance records")])]), key)
 
     monkeypatch.setattr(pipeline, "hybrid_search", retrieval)
     monkeypatch.setattr(pipeline, "llm_parse", llm)
@@ -111,16 +134,16 @@ def test_failed_draft_keeps_last_checkpoint_and_resumes(workflow, monkeypatch):
 
 
 def test_interruption_after_draft_does_not_repeat_generation(workflow, monkeypatch):
-    original = pipeline.validate_ids
+    original = review_state.validate_section
 
     def interrupt(*args):
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr(pipeline, "validate_ids", interrupt)
+    monkeypatch.setattr(review_state, "validate_section", interrupt)
     with pytest.raises(KeyboardInterrupt):
         pipeline.run_review(assessment_id="demo", limit=1)
     assert workflow["store"].load().sections["R1"].checkpoint == "draft"
-    monkeypatch.setattr(pipeline, "validate_ids", original)
+    monkeypatch.setattr(review_state, "validate_section", original)
     final = pipeline.run_review(assessment_id="demo", resume=True, limit=1)
     assert final.sections["R1"].execution_status == "completed"
     assert len(workflow["calls"]["llm"]) == 1
@@ -380,7 +403,7 @@ def test_partial_legacy_resume_integrates_register_without_double_counting(workf
     assert not after.partial_run
     assert after.sections["R1"].revision == 2
     assert after.sections["R1"].finding_history[0]["revision"] == 1
-    assert all(s.audit_status == "raw_spans_checked" for s in after.sections.values())
+    assert all(s.audit_status == "semantic_checked" for s in after.sections.values())
     assert any("Imported legacy report" in limitation for limitation in after.limitations)
 
 
@@ -455,3 +478,18 @@ def test_cli_passes_persistence_options_without_inference(monkeypatch):
     assert main.main() == 0
     assert calls == [((None, None), {"assessment_id": "demo", "requirement_id": "R2",
                                     "refresh": True, "resume": False})]
+
+
+def ask_fixture(output, prompt, quote="Risk management requirements in this source."):
+    from mdr_rag.schemas import Answer, StructuredAnswer, StructuredClaim, FindingReview, ClaimVerdict, QuotedReference
+    if isinstance(output, Answer):
+        return StructuredAnswer(claims=[StructuredClaim(claim_id="C1", text=output.answer,
+            role="legal_duty", category="assessment", obligation_ids=[], evidence=[
+                QuotedReference(source_id=output.source_ids[0], exact_quote=quote, purpose="legal_basis")])],
+            source_ids=output.source_ids, limitations=output.limitations)
+    data = json.loads(prompt.split("\nRAW_SOURCE_SNAPSHOTS:")[0])
+    return FindingReview(claim_revision=data["claim_revision"], context_hash=data["context_hash"],
+        claims=[ClaimVerdict(claim_id=f"C{n}", verdict="supported" if c.supported else "insufficient",
+            reason="Synthetic fixture", evidence=[QuotedReference(**ref.model_dump(), purpose="legal_basis")
+                                                  for ref in c.evidence]) for n,c in enumerate(output.claims,1)],
+        coverage=[], status_supported=True, applicability_supported=True)

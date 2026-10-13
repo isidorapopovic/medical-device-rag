@@ -89,8 +89,15 @@ def write_markdown(assessment: dict, destination: Path) -> None:
                 out.append("**No successful strict gate validation: gate is disabled or experimental.**")
         else:
             out += ["", "**Evidence gate:** not performed in this historical/legacy finding; no strict validation claimed."]
+        semantic = row.get("semantic_validation")
+        if semantic:
+            out += ["", f"**Claim validation:** {row.get('audit_status')}; policy `{semantic['policy']}`; "
+                    f"repair attempts: {semantic['repair_attempts']}; rejected drafts retained internally: {semantic['rejected_draft_count']}.",
+                    "Separate local model review is procedural validation; correlated errors remain possible."]
         if f.get("obligation_coverage"):
-            out += ["", "**Atomic obligation coverage (model self-assessment; raw citations checked, semantics unverified):**"]
+            out += ["", ("**Atomic obligation coverage (separate model review; not a legal guarantee):**"
+                        if row.get("audit_status") == "semantic_checked" else
+                        "**Atomic obligation coverage (model self-assessment; semantics unverified):**")]
             out += [f"- `{clean(c['obligation_id'])}`: {c['status']}; {clean(c['explanation'])}" for c in f['obligation_coverage']]
         if row.get("claim_links"):
             out += ["", "**Verified cited raw spans (provenance, not semantic entailment):**", ""]

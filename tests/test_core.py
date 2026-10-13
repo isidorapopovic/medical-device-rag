@@ -1,3 +1,4 @@
+from test_report_state import ask_fixture
 from mdr_rag.core import chunks, is_real_quote, parse_pages, validate_ids
 from mdr_rag.schemas import (
     Answer, AnswerClaim, AnswerSupportVerification, ClaimEvidence
@@ -62,9 +63,9 @@ def test_ask_abstains_when_model_citations_are_unverified(monkeypatch, capsys, t
     )
     monkeypatch.setattr(
         pipeline, "llm_parse",
-        lambda instructions, input_text, model_type: Answer(
+        lambda instructions, input_text, model_type: ask_fixture(Answer(
             answer="Unsupported regulatory claim.", source_ids=["L-invented"], limitations=[]
-        ),
+        ), input_text),
     )
 
     pipeline.run_ask("What are the requirements?")
@@ -104,7 +105,7 @@ def test_ask_displays_answer_with_verified_citation(monkeypatch, capsys, tmp_pat
             )
         ]),
     ])
-    monkeypatch.setattr(pipeline, "llm_parse", lambda *args: next(responses))
+    monkeypatch.setattr(pipeline, "llm_parse", lambda rules, prompt, schema: ask_fixture(next(responses), prompt))
 
     pipeline.run_ask("What are the requirements?")
 
@@ -147,7 +148,7 @@ def test_ask_abstains_when_claim_verifier_rejects_answer(monkeypatch, capsys, tm
             )
         ]),
     ])
-    monkeypatch.setattr(pipeline, "llm_parse", lambda *args: next(responses))
+    monkeypatch.setattr(pipeline, "llm_parse", lambda rules, prompt, schema: ask_fixture(next(responses), prompt))
 
     pipeline.run_ask("Is the device compliant?")
 
