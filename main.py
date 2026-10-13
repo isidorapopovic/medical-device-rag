@@ -34,7 +34,18 @@ def main():
     extract.add_argument("--legal-file", help="Filename in documents/legal")
     review = subs.add_parser("review", help="Map requirements to device evidence")
     review.add_argument("--limit", type=int, default=None, help="Only first N requirements (marks output partial)")
-    review.add_argument("--k", type=int, default=7, help="Number of retrieved device chunks per requirement")
+    review.add_argument("--k", type=int, default=None, help="Device chunks per requirement (new: 7; resume: saved value)")
+    review.add_argument("--assessment-id", help="Persistent assessment ID (generated for a new run if omitted)")
+    review.add_argument("--resume", action="store_true", help="Continue pending, failed or stale checkpoints")
+    review.add_argument("--requirement-id", help="Update only this existing requirement")
+    review.add_argument("--refresh", action="store_true", help="Create a new finding revision for --requirement-id")
+    report = subs.add_parser("report", help="Render saved assessment without inference")
+    report.add_argument("--assessment-id", required=True)
+    report.add_argument("--historical", action="store_true", help="Explicitly render a historical snapshot without current dependencies")
+    report.add_argument("--revision", type=int, help="Saved state revision (requires --historical)")
+    migrate = subs.add_parser("import-legacy", help="Non-destructively import a legacy assessment into a new ID")
+    migrate.add_argument("--assessment", required=True)
+    migrate.add_argument("--assessment-id", required=True)
     explorer = subs.add_parser("explore", help="Show candidate passages to label manually")
     explorer.add_argument("question")
     explorer.add_argument("--kind", choices=["legal", "device"], default="legal")
@@ -68,7 +79,19 @@ def main():
         elif args.command == "extract":
             extract_requirements(args.pages, args.legal_file)
         elif args.command == "review":
-            run_review(args.limit, args.k)
+            run_review(args.limit, args.k, assessment_id=args.assessment_id, resume=args.resume,
+                       requirement_id=args.requirement_id, refresh=args.refresh)
+        elif args.command == "report":
+            from mdr_rag.review_state import render_report
+            render_report(args.assessment_id, historical=args.historical, revision=args.revision)
+        elif args.command == "import-legacy":
+            from pathlib import Path
+            from mdr_rag.core import STATE
+            from mdr_rag.report_state import import_legacy, export_report, StateStore
+            state = import_legacy(Path(args.assessment), STATE, args.assessment_id)
+            destination = StateStore(STATE, args.assessment_id).directory / "legacy-import"
+            export_report(state, destination, historical=True)
+            print(f"Imported unverified legacy snapshot; exports: {destination}")
         elif args.command == "explore":
             from mdr_rag.evaluation import inspect_candidates
             inspect_candidates(args.question, args.kind, args.k)

@@ -23,6 +23,7 @@ def write_markdown(assessment: dict, destination: Path) -> None:
         f"- Requirements assessed: {assessment['assessed_requirements']} / {assessment['total_extracted_requirements']}",
         f"- Partial run: {'YES' if assessment['partial_run'] else 'NO'}",
         f"- Human validated: NO",
+        f"- Snapshot: {'HISTORICAL — not validated against current inputs' if assessment.get('historical_snapshot') else 'Current dependency check required before reuse'}",
         "",
         "## Evidence-status overview (not a compliance score)",
         "",
@@ -31,6 +32,16 @@ def write_markdown(assessment: dict, destination: Path) -> None:
     ]
     for name in ("supported", "partial", "not_found", "needs_review", "possibly_not_applicable"):
         out.append(f"| {name} | {assessment['status_counts'].get(name, 0)} |")
+    if assessment.get("sections"):
+        out += ["", "## Execution and checkpoint status", "",
+                "| Requirement | Execution | Last checkpoint | Finding revision | Audit |", "|---|---|---|---:|---|"]
+        notes = []
+        for key, section in assessment["sections"].items():
+            out.append(f"| {clean(key)} | {section['execution_status']} | {section['checkpoint']} | {section['revision']} | {section['audit_status']} |")
+            if section.get("stale_reasons") or section.get("failure_reason"):
+                notes.append(f"- {clean(key)}: {clean(section.get('failure_reason') or ', '.join(section['stale_reasons']))}")
+        if notes:
+            out += ["", *notes]
     out += ["", "## Requirement-by-requirement evidence mapping", ""]
     for row in rows:
         req, f = row["requirement"], row["finding"]
@@ -43,6 +54,7 @@ def write_markdown(assessment: dict, destination: Path) -> None:
             f"**Source quote:** “{clean(req['exact_quote'])}”", "",
             f"**Draft applicability:** {clean(req['applies_to'])}", "",
             f"**Evidence status:** `{f['status']}`", "",
+            f"**Audit:** {row.get('audit_status', 'legacy / unspecified — not newly verified')}", "",
             f"**Assessment:** {clean(f['explanation'])}", "",
             f"**Applicability uncertainty:** {clean(f['applicability_reason'])}", "",
             "**Cited device evidence:**",
@@ -50,7 +62,10 @@ def write_markdown(assessment: dict, destination: Path) -> None:
         if not f["evidence_ids"]:
             out.append("- None verified in retrieved results")
         for id_ in f["evidence_ids"]:
-            p = locations[id_]
+            p = locations.get(id_)
+            if p is None:
+                out.append(f"- `{clean(id_)}` — UNVERIFIED: missing from the saved retrieved evidence")
+                continue
             locator = f"PDF page {p['page']}" if p["page"] else f"text block {p['block']}"
             out.append(f"- `{id_}` — `{p['source']}`, {locator}; SHA-256 `{p['sha256']}`")
         out += ["", "**Missing information / questions to investigate:**"]

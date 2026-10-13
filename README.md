@@ -59,9 +59,48 @@ Changing `EMBEDDING_MODEL` requires an intentional index rebuild before using th
 
 After activating the project virtual environment, `python main.py --help` needs installed Python dependencies but no Gemini credentials or inference. Run `python -m pytest -q` for API-free tests. If Windows temp-folder permissions block pytest, use a fresh writable directory, for example `python -m pytest -q --basetemp reports/test-temp-stage0`. Pytest clears the chosen directory, so always choose a dedicated test-only path.
 
-`review` currently overwrites `reports/assessment.json` and `reports/assessment.md`; it has no CLI run-ID option. For an isolated baseline, use a unique output directory by setting `mdr_rag.pipeline.REPORTS` to that directory in a Python wrapper before calling `run_review(limit=2)`. This changes only report destinations, not source/state/index locations. Evaluation supports `python main.py evaluate --gold eval/gold_queries.json --out reports/<distinct-run-id>/retrieval_evaluation.json`. Run both only with matching existing state/index, installed local models and real human-verified gold labels. Do not use illustrative gold labels as measurements.
+Reviews now have persistent assessment IDs. Use `python main.py review --assessment-id baseline01 --limit 2` for a distinct review; evaluation supports `python main.py evaluate --gold eval/gold_queries.json --out reports/baseline01/retrieval_evaluation.json`. Reviews require matching existing state/index and installed local models; evaluation also requires real human-verified gold labels. Do not use illustrative labels as measurements. The dated [Stage 0 baseline](docs/stage0_baseline.md) records the original availability blockers; [Stage 1 verification](docs/stage1_verification.md) records persistence tests.
 
-The current Stage 0 results and live-run blockers are recorded in [docs/stage0_baseline.md](docs/stage0_baseline.md).
+## Persistent reviews, resume and updates
+
+The existing requirement register is reused; resume never runs extraction. Start a named assessment, continue it, or refresh one actual requirement ID from the register:
+
+```powershell
+python main.py review --assessment-id study01 --limit 2
+python main.py review --assessment-id study01 --resume
+python main.py review --assessment-id study01 --requirement-id R-ACTUAL-ID --refresh
+python main.py report --assessment-id study01
+```
+
+A review without `--assessment-id` generates a new ID and prints it. Reusing an existing ID requires `--resume` or `--requirement-id`. `--resume` continues pending/failed/stale sections; `--requirement-id` processes only the named section if unfinished or stale, and `--refresh` deliberately starts a new finding revision for that section. It cannot be combined with `--resume`. `--limit` must be positive and cannot be combined with a requirement ID; on resume it selects the first N entries of the full register, skipping already completed entries. An omitted `--k` reuses the saved value (new assessments default to 7). Environment/model settings and explicit CLI overrides are checked against saved dependencies; a changed setting invalidates the affected stages rather than mixing configurations.
+
+Canonical storage is `state/assessments/<assessment_id>/report_state.json`, with immutable numbered snapshots in `revisions/`. Checkpoints are the existing pipeline operations: explicit unverified applicability context, query construction, retrieval, structured draft, and citation-ID validation/publication. This stage does not introduce an applicability analyst, independent semantic reviewer, raw-span citation auditor or evidence gate. `audit_status=identifier_checked_only` is not proof of grounded reasoning.
+
+The assessment lock covers the whole review. Mutations require an expected revision and use a flushed temporary file in the same directory followed by atomic replacement. Another writer gets an actionable lock/revision error. A crashed process can leave `assessment.lock`; verify the recorded PID is no longer running before manually removing that lock. Locks are never automatically broken. Invalid/unsupported state schemas are rejected without overwriting the file. If disk writing is interrupted, canonical state determines the last committed checkpoint; the next mutation repairs a missing latest history snapshot before advancing.
+
+Profile changes invalidate applicability and downstream operations; requirement/query changes invalidate query construction onward; source hashes, extraction settings, retrieval mode, candidate count, reranker backend or calibration identity changes invalidate retrieval onward; generation model/context/prompt changes invalidate drafting onward. Validation-version changes retain the draft and rerun identifier checks. Corpus changes invalidate **all** retrieval-dependent sections, even if the changed file was never cited. A targeted update recomputes only its selected section and marks other affected sections stale. Unchanged sections keep their findings, timestamps, section revisions and human annotations. Removed/renamed requirement IDs or a different legal document require a new assessment; old sections are not silently dropped. Fingerprints identify configured model tags, not Ollama weight digests; refresh assessments if local weights change under the same tag.
+
+Completed findings are exported to `state/assessments/<assessment_id>/assessment.json` and `assessment.md`. These are regenerated from canonical state at checkpoints; pending, failed and stale sections appear separately in the execution summary. Stale previous findings remain in state/history and are excluded from current finding counts and compatibility graphs. A successful command also refreshes the traditional `reports/assessment.json` and `reports/assessment.md` latest-report files. Exports have a separate writer lock and individual atomic file replacements; canonical state is authoritative if a crash interrupts the JSON/Markdown pair.
+
+Historical rendering performs no live corpus checks or inference and labels the output **HISTORICAL**. It writes beneath a separate `historical-<revision>/` folder and leaves canonical state and latest exports untouched:
+
+```powershell
+python main.py report --assessment-id study01 --historical
+python main.py report --assessment-id study01 --historical --revision 8
+```
+
+Use an actual saved state revision. A current `report` validates dependencies and persists any resulting staleness without calling a model. Unindexed file changes block current rendering/review; they never trigger an automatic index rebuild. Return to a validated live index explicitly, or render the historical snapshot.
+
+To import an existing report, choose a **new** assessment ID:
+
+```powershell
+python main.py import-legacy --assessment reports/assessment.json --assessment-id legacy01
+python main.py report --assessment-id legacy01 --historical
+```
+
+Import preserves source bytes, original IDs, statuses, timestamps, audit limitations and the original report in provenance. It marks findings `legacy_unverified` and keeps `human_validated=false`. A partial legacy report retains its missing-requirement count; it does not invent unseen requirements. Imported fingerprints are unknown, so current reuse requires recomputation against the existing register/index with `review --assessment-id legacy01 --resume`; migration alone does not verify findings. Existing canonical assessments cannot be overwritten by import.
+
+New extractions derive IDs from legal source/hash, physical locator, provision, verified normalized quote and obligation position, independently of model-written paraphrases. Re-extracting a matching anchor retains existing (including legacy) IDs and versions changed wording in `requirement_revision`/`requirement_history`. The current extractor deduplicates identical quoted anchors; normalized positions are identity metadata, not verified raw quotation spans. Review state also preserves every previous published finding and its source/requirement snapshots in `finding_history`.
 
 ## Document upload and preview app
 
@@ -165,6 +204,7 @@ Partial runs are explicitly marked in the resulting report. `review` uses the co
 vector_db/                    Local Chroma vector database
 state/manifest.json           Indexed file hashes, warnings, model
 state/requirements_draft.json Preliminary requirement register + legal citations
+state/assessments/<id>/       Canonical review state, revisions and per-assessment exports
 reports/assessment.json       Full machine-readable gap review + retrieved evidence
 reports/assessment.md         Human-readable Q-Mix-style report
 ```
@@ -183,7 +223,7 @@ Every candidate legal requirement stores: uploaded filename, SHA-256 hash, sourc
 1. `core.py`: extracts source text and creates traceable chunks.
 2. `search.py`: embeds chunks with the configured local Ollama embedding model, stores vectors in ChromaDB; retrieval merges dense semantic ranking with BM25 lexical ranking using reciprocal-rank fusion.
 3. `pipeline.py:extract_requirements`: prompts an LLM per chunk of the selected MDR pages, validates a verbatim quote against its source, and builds a structured draft requirement register.
-4. `pipeline.py:run_review`: retrieves device evidence for each individual requirement, prompts the LLM with ONLY that requirement + retrieved passages, validates IDs, and saves structured findings.
+4. `pipeline.py:run_review` delegates to `review_state.py`: retrieves device evidence per requirement, generates structured drafts, validates IDs and saves each checkpoint through `report_state.py`. Completed stages are reused only after dependency validation.
 5. `Q_Mix_report_writer.py`: deterministic template report built from source-anchored findings, not an autonomous legal agent.
 
 ## 6. Safe development and verification

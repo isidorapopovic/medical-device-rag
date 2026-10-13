@@ -76,7 +76,7 @@ The Requirement Analyst runs when creating/updating the register. Existing extra
 
 ## Proposed modules and contracts
 
-These are proposed new paths, not files already present:
+Design table: `config.py` and `report_state.py` are now present after Stages 0?1; other proposed modules remain later-stage work:
 
 | Module | Responsibility |
 |---|---|
@@ -322,7 +322,7 @@ Role boundaries:
 
 Unknown applicability does not automatically skip retrieval. `possibly_not_applicable` remains tentative. In the first implementation, default to searching device evidence even for that result; any future skip policy must be explicit, sourced and visible.
 
-Proposed CLI commands — these do not exist until this stage:
+CLI target after Stage 7 (basic assessment IDs, resume, targeted refresh and report rendering were added in Stage 1; cross-encoder options and six-role orchestration remain pending):
 
 ```powershell
 python main.py --retrieval hybrid --reranker cross_encoder review --limit 2 --assessment-id demo01
@@ -398,7 +398,7 @@ Do not add a fake calibration file just to make strict mode run. The calibration
 ## Completion checklist
 
 - [x] Stage 0: local baseline and configuration corrected.
-- [ ] Stage 1: resumable ReportState and targeted revisions.
+- [x] Stage 1: resumable ReportState and targeted revisions.
 - [ ] Stage 2: immutable SourceBuffer with raw span links.
 - [ ] Stage 3: bounded multi-query retrieval and production trace.
 - [ ] Stage 4: optional scored CPU cross-encoder.
@@ -412,6 +412,13 @@ Do not add a fake calibration file just to make strict mode run. The calibration
 - Stage 0 verified on 2026-10-13 against checkout `89d8c02047743b35354c4006c5c5fa9c96b0b5b1` plus working-tree changes; implementation commit recorded in Git history on `qmatrix-impelmantion`.
 - See [stage0_baseline.md](stage0_baseline.md) for reproducible commands, pre-existing environment errors, 25 passing pre-change tests and 31 passing post-change tests, preservation details and live baseline blockers.
 - Only mocked/API-free review/retrieval verification was possible: the requested chat model is not installed and the real gold set is empty. No index rebuild or assessment overwrite occurred.
+
+### Stage 1 completion record
+
+- Implemented typed schema-v1 state, assessment locks and expected revisions, atomic checkpoints/revision history, dependency invalidation, resume and targeted refresh, compatibility exports and explicit non-destructive legacy import.
+- New requirement IDs use deterministic legal anchors; matching existing IDs are retained and paraphrase revisions recorded. Independent reviewer/citation audits remain later-stage work.
+- Verification: 31 pre-change tests and 70 post-change tests passed; CLI help and `git diff --check` passed. See [stage1_verification.md](stage1_verification.md) for commands, preservation and limitations.
+- Implementation commit is recorded in Git history on `qmatrix-impelmantion` as "Add resumable assessment state and targeted review updates".
 
 For each completed stage, record the implementation commit, checks run, observed results and remaining limitations. A mocked test passing establishes code behavior; it does not establish regulatory reasoning accuracy.
 
