@@ -76,7 +76,7 @@ The Requirement Analyst runs when creating/updating the register. Existing extra
 
 ## Proposed modules and contracts
 
-Design table: `config.py` and `report_state.py` are now present after Stages 0?1; other proposed modules remain later-stage work:
+Design table: `config.py`, `report_state.py` and `source_buffer.py` are now present after Stages 0?2; other proposed modules remain later-stage work:
 
 | Module | Responsibility |
 |---|---|
@@ -399,7 +399,7 @@ Do not add a fake calibration file just to make strict mode run. The calibration
 
 - [x] Stage 0: local baseline and configuration corrected.
 - [x] Stage 1: resumable ReportState and targeted revisions.
-- [ ] Stage 2: immutable SourceBuffer with raw span links.
+- [x] Stage 2: immutable SourceBuffer with raw span links.
 - [ ] Stage 3: bounded multi-query retrieval and production trace.
 - [ ] Stage 4: optional scored CPU cross-encoder.
 - [ ] Stage 5: calibrated gate and truthful abstention.
@@ -419,6 +419,14 @@ Do not add a fake calibration file just to make strict mode run. The calibration
 - New requirement IDs use deterministic legal anchors; matching existing IDs are retained and paraphrase revisions recorded. Independent reviewer/citation audits remain later-stage work.
 - Verification: 31 pre-change tests and 70 post-change tests passed; CLI help and `git diff --check` passed. See [stage1_verification.md](stage1_verification.md) for commands, preservation and limitations.
 - Implementation commit is recorded in Git history on `qmatrix-impelmantion` as "Add resumable assessment state and targeted review updates".
+
+### Stage 2 completion record
+
+- Implemented immutable, content-addressed legal/device SourceBuffer snapshots, raw-span/identity/hash/locator validation, exact per-call source ranges and separate retrieved/presented/cited sets.
+- Reviews publish validated claim spans and verified raw legal quotes, or flag `needs_review`; the legacy normalized extraction validator is retained and legal anchors can be mapped back to unique raw substrings. Schema-v1 snapshots remain readable without inventing provenance; mutations write schema v2 and preserve prior history.
+- Extraction, ask and optional CLI evaluation reranking record standalone chat traces; assessments embed source snapshots for historical reproduction without the current index.
+- Verification: 70 pre-change tests and 116 post-change tests passed; CLI help, final focused export checks and `git diff --check` passed. See [stage2_verification.md](stage2_verification.md) for details and remaining limitations. Semantic claim coverage/entailment audits remain pending.
+- Implementation commit is recorded in Git history on `qmatrix-impelmantion` as "Add immutable source snapshots and raw-span evidence provenance".
 
 For each completed stage, record the implementation commit, checks run, observed results and remaining limitations. A mocked test passing establishes code behavior; it does not establish regulatory reasoning accuracy.
 

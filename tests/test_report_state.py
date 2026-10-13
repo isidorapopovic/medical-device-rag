@@ -7,7 +7,7 @@ import pytest
 from mdr_rag import pipeline, report_state, review_state
 from mdr_rag.report_state import StateStore, export_report, import_legacy
 from mdr_rag.requirement_identity import assign_identity
-from mdr_rag.schemas import Finding
+from mdr_rag.schemas import Finding, FindingClaim, QuotedReference
 
 
 def requirement(key):
@@ -37,6 +37,10 @@ def workflow(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "check_manifest", lambda: manifest)
     monkeypatch.setattr(pipeline, "check_regulation_alignment", lambda draft: None)
     monkeypatch.setattr(pipeline, "profile_data", lambda: profile)
+    monkeypatch.setattr(pipeline, "legal_chunks", lambda source, pages: [{
+        "id": "L-1", "text": "\n".join(req["exact_quote"] for req in draft["requirements"]),
+        "meta": {"source": "legal/law.pdf", "sha256": "law-hash", "kind": "legal", "page": 1, "block": 1}}])
+    original_extract = pipeline.extract_requirements
     monkeypatch.setattr(pipeline, "extract_requirements", lambda *args: pytest.fail("Resume must not extract"))
     for key, value in {"OLLAMA_LLM_MODEL": "qwen3:4b", "EMBEDDING_MODEL": "embeddinggemma",
                        "OLLAMA_NUM_CTX": "8192", "RETRIEVAL_MODE": "hybrid",
@@ -53,12 +57,15 @@ def workflow(monkeypatch, tmp_path):
     def llm(rules, prompt, schema):
         calls["llm"].append(prompt)
         return Finding(status="supported", explanation="Synthetic evidence only", evidence_ids=["D-1"],
-                       missing_information=[], recommended_actions=[], applicability_reason="Unverified")
+                       missing_information=[], recommended_actions=[], applicability_reason="Unverified",
+                       claims=[FindingClaim(claim_id="C1", text="Synthetic evidence only", evidence=[
+                           QuotedReference(source_id="D-1", exact_quote="Synthetic maintenance records")])])
 
     monkeypatch.setattr(pipeline, "hybrid_search", retrieval)
     monkeypatch.setattr(pipeline, "llm_parse", llm)
     return {"root": state_root, "draft": draft, "draft_path": draft_path,
             "manifest": manifest, "profile": profile, "calls": calls, "llm": llm,
+            "extract": original_extract,
             "store": StateStore(state_root, "demo"), "reports": tmp_path / "reports"}
 
 
@@ -370,7 +377,7 @@ def test_partial_legacy_resume_integrates_register_without_double_counting(workf
     assert not after.partial_run
     assert after.sections["R1"].revision == 2
     assert after.sections["R1"].finding_history[0]["revision"] == 1
-    assert all(s.audit_status == "identifier_checked_only" for s in after.sections.values())
+    assert all(s.audit_status == "raw_spans_checked" for s in after.sections.values())
     assert any("Imported legacy report" in limitation for limitation in after.limitations)
 
 

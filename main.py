@@ -100,7 +100,12 @@ def main():
             visualize_embeddings(args.sample, args.query, args.out)
         elif args.command == "evaluate":
             from mdr_rag.evaluation import evaluate
-            evaluate(args.gold, args.ks, args.out)
+            from mdr_rag.core import STATE
+            from mdr_rag.source_buffer import EvidenceRun, recording
+            evidence_run = EvidenceRun(STATE, "evaluate")
+            with recording(evidence_run.recorder):
+                evaluate(args.gold, args.ks, args.out)
+            evidence_run.save()
         elif args.command == "graph":
             from mdr_rag.graph_viz import graph_from_assessment
             graph_from_assessment(args.assessment, args.out, args.max_requirements)

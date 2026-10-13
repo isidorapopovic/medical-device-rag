@@ -10,7 +10,7 @@ from .report_state import fingerprint
 def anchor_key(requirement: dict) -> tuple:
     return (requirement["legal_source"], requirement["legal_sha256"],
             requirement["legal_page"], requirement["legal_source_chunk_id"],
-            norm(requirement["exact_quote"]), norm(requirement["provision"]))
+            norm(requirement.get("legacy_normalized_quote") or requirement["exact_quote"]), norm(requirement["provision"]))
 
 
 def assign_identity(requirement: dict, text: str, previous: list[dict]) -> dict:

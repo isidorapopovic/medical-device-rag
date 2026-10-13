@@ -1,7 +1,7 @@
 """Versioned assessment snapshots, guarded mutations and compatibility exports.
 
 The current checkpoints describe the existing pipeline, not the later six-role
-orchestration or a semantic/citation audit that has not been implemented yet.
+orchestration or an independent semantic audit.
 """
 import json
 import os
@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .core import digest
 from .schemas import Finding
+from .source_buffer import ClaimEvidenceLink, ModelCallTrace, SourceBuffer, SourcePassage
 
 
 def timestamp() -> str:
@@ -81,6 +82,13 @@ class RequirementSection(StateModel):
     applicability_reason: str = "User profile and applicability have not been independently verified."
     queries: list[str] = Field(default_factory=list)
     passages: list[RetrievedPassage] = Field(default_factory=list)
+    retrieved_buffer_ids: list[str] = Field(default_factory=list)
+    legal_anchor: ClaimEvidenceLink | None = None
+    legal_anchor_issue: str | None = None
+    model_calls: list[ModelCallTrace] = Field(default_factory=list)
+    draft_call_id: str | None = None
+    claim_links: list[ClaimEvidenceLink] = Field(default_factory=list)
+    citation_issues: list[str] = Field(default_factory=list)
     draft_finding: Finding | None = None
     finding: Finding | None = None
     finding_history: list[dict] = Field(default_factory=list)
@@ -88,7 +96,7 @@ class RequirementSection(StateModel):
     failure_reason: str | None = None
     attempt_count: int = Field(default=0, ge=0)
     stale_reasons: list[str] = Field(default_factory=list)
-    audit_status: Literal["not_performed", "identifier_checked_only", "legacy_unverified"] = "not_performed"
+    audit_status: Literal["not_performed", "identifier_checked_only", "legacy_unverified", "raw_spans_checked"] = "not_performed"
     human_annotations: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -121,7 +129,7 @@ class StageEvent(StateModel):
 
 
 class ReportState(StateModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     assessment_id: str
     revision: int = Field(default=0, ge=0)
     created_at: str = Field(default_factory=timestamp)
@@ -134,6 +142,7 @@ class ReportState(StateModel):
     profile_fingerprint: str
     config: dict
     sections: dict[str, RequirementSection]
+    source_buffer: dict[str, SourcePassage] = Field(default_factory=dict)
     events: list[StageEvent] = Field(default_factory=list)
     limitations: list[str]
     provenance: dict = Field(default_factory=dict)
@@ -157,6 +166,30 @@ class ReportState(StateModel):
                 raise ValueError("Saved context window must be a positive integer")
         if any(key != section.requirement.id for key, section in self.sections.items()):
             raise ValueError("Section key must equal requirement ID")
+        buffer = SourceBuffer(self.source_buffer)
+        for section in self.sections.values():
+            for key in section.retrieved_buffer_ids:
+                buffer.get_passage(key)
+            for trace in section.model_calls:
+                for key in trace.retrieved_buffer_ids:
+                    buffer.get_passage(key)
+                for item in trace.presented:
+                    buffer.validate_presented(item)
+            if section.legal_anchor is not None:
+                buffer.validate_link(section.legal_anchor)
+            for link in section.claim_links:
+                trace = next((item for item in section.model_calls if item.call_id == section.draft_call_id), None)
+                if trace is None or trace.outcome != "completed":
+                    raise ValueError("Claim links require a completed bound draft call")
+                buffer.validate_link(link, presented=trace.presented)
+            for revision in section.finding_history:
+                if revision.get("legal_anchor"):
+                    buffer.validate_link(revision["legal_anchor"])
+                for link in revision.get("claim_links", []):
+                    trace = next((item for item in section.model_calls if item.call_id == revision.get("draft_call_id")), None)
+                    if trace is None:
+                        raise ValueError("Historical claim links have no saved model context")
+                    buffer.validate_link(link, presented=trace.presented)
         return self
 
     def summarize(self):
@@ -226,9 +259,7 @@ class StateStore:
     def load(self) -> ReportState:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict) or data.get("schema_version") != 1:
-                raise ValueError("Missing or unsupported schema_version; explicit migration is required")
-            state = ReportState.model_validate(data)
+            state = decode_state(data)
             if state.assessment_id != self.assessment_id:
                 raise ValueError("State belongs to a different assessment")
             return state
@@ -239,7 +270,8 @@ class StateStore:
     def save(self, state: ReportState, expected_revision: int) -> ReportState:
         if not self._locked:
             raise RuntimeError("State mutation requires the assessment lock")
-        current = self.load().revision if self.path.exists() else 0
+        previous_state = self.load() if self.path.exists() else None
+        current = previous_state.revision if previous_state else 0
         if current != expected_revision or state.revision != expected_revision:
             raise RuntimeError(f"Assessment revision conflict: expected {expected_revision}, found {current}. Reload and retry.")
         if state.assessment_id != self.assessment_id:
@@ -248,7 +280,14 @@ class StateStore:
         candidate.revision += 1
         candidate.updated_at = timestamp()
         candidate.summarize()
-        candidate = ReportState.model_validate(candidate.model_dump())
+        try:
+            candidate = ReportState.model_validate(candidate.model_dump())
+        except ValueError as exc:
+            raise ValueError("Assessment content validation failed; existing state was preserved") from exc
+        if previous_state is not None:
+            for key, passage in previous_state.source_buffer.items():
+                if candidate.source_buffer.get(key) != passage:
+                    raise ValueError("Existing source snapshots cannot be replaced or removed")
         payload = candidate.model_dump_json(indent=2)
         # Preserve the last committed version before replacement. No uncommitted
         # next-revision history can block recovery after an interrupted write.
@@ -282,8 +321,12 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
         section.queries = []
     if earliest < 3:
         section.passages = []
+        section.retrieved_buffer_ids = []
     if earliest < 4:
         section.draft_finding = None
+        section.draft_call_id = None
+        section.claim_links = []
+        section.citation_issues = []
     if earliest == 0:
         section.applicability = "uncertain"
         section.applicability_reason = "Profile changed or not verified; applicability requires human review."
@@ -295,15 +338,47 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
     return True
 
 
+def decode_state(data) -> ReportState:
+    if not isinstance(data, dict) or type(data.get("schema_version")) is not int or data["schema_version"] not in {1, 2}:
+        raise ValueError("Missing or unsupported schema_version")
+    if data["schema_version"] == 1:
+        # Read-only schema upgrade: archived bytes stay intact. No missing source
+        # snapshots/model inputs/quotes are invented or marked newly verified.
+        data = dict(data, schema_version=2)
+        data["provenance"] = dict(data.get("provenance", {}), state_schema_origin=1)
+    try:
+        return ReportState.model_validate(data)
+    except ValueError as exc:
+        raise ValueError("Assessment schema/content validation failed") from exc
+
+
 def compatibility_report(state: ReportState, historical: bool = False) -> dict:
     rows = []
+    buffer = SourceBuffer(state.source_buffer)
     for section in state.sections.values():
         if section.finding is None or (section.execution_status != "completed" and not historical):
             continue
         # A stale finding is never relabelled as a current assessment.
+        published = section.finding_history[-1] if section.finding_history else {}
+        requirement = dict(published.get("requirement", section.requirement.model_dump()))
+        anchor = published.get("legal_anchor")
+        if anchor is not None:
+            buffer.validate_link(anchor)
+            requirement["exact_quote"] = anchor["exact_quote"]
+        else:
+            # Retain the legacy value in canonical state/provenance only. A
+            # normalized or unaudited anchor must not be exported as an exact quote.
+            requirement["exact_quote"] = ""
+        published_finding = section.finding.model_dump()
+        approved = {(link["claim_id"], link["chunk_id"], link["exact_quote"], link["start"], link["end"], link["purpose"])
+                    for link in published.get("claim_links", [])}
+        for claim in published_finding.get("claims", []):
+            claim["evidence"] = [ref for ref in claim["evidence"]
+                                 if (claim["claim_id"], ref["source_id"], ref["exact_quote"],
+                                     ref["start"], ref["end"], ref["purpose"]) in approved]
         rows.append({
-            "requirement": section.finding_history[-1]["requirement"] if section.finding_history else section.requirement.model_dump(),
-            "finding": section.finding.model_dump(),
+            "requirement": requirement,
+            "finding": published_finding,
             "retrieved_evidence": section.finding_history[-1]["retrieved_evidence"]
                 if section.finding_history else [
                     {"id": p.id, **p.meta, "excerpt": p.text} for p in section.passages],
@@ -311,6 +386,13 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
             "finding_updated_at": section.finding_updated_at,
             "execution_status": section.execution_status,
             "audit_status": section.audit_status,
+            "legal_anchor": anchor,
+            "legal_quote_verified": anchor is not None,
+            "legal_anchor_issue": published.get("legal_anchor_issue", "legacy_raw_span_unverified" if not anchor else None),
+            "retrieved_buffer_ids": published.get("retrieved_buffer_ids", []),
+            "draft_call_id": published.get("draft_call_id"),
+            "claim_links": published.get("claim_links", []),
+            "citation_issues": published.get("citation_issues", []),
         })
     scope = state.legal_scope
     return {
@@ -332,7 +414,10 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
                            "failure_reason": s.failure_reason, "audit_status": s.audit_status}
                      for key, s in state.sections.items()},
         "findings": rows, "limitations": state.limitations,
-        "provenance": state.provenance,
+        "provenance": {key: value for key, value in state.provenance.items() if key != "original_report"}
+            | ({"original_report_retained_in_canonical_state": True} if "original_report" in state.provenance else {}),
+        "source_buffer": {key: passage.model_dump() for key, passage in state.source_buffer.items()},
+        "model_calls": [trace.model_dump() for section in state.sections.values() for trace in section.model_calls],
     }
 
 
@@ -360,7 +445,10 @@ def import_legacy(source: Path, state_root: Path, assessment_id: str) -> ReportS
     report = json.loads(raw.decode("utf-8"))
     sections = {}
     for row in report["findings"]:
-        req = RequirementRecord.model_validate(row["requirement"])
+        req_data = dict(row["requirement"])
+        # New exports may have suppressed an unverified legacy quotation. The
+        # original raw register value is not reconstructed from an empty field.
+        req = RequirementRecord.model_validate(req_data)
         if req.id in sections:
             raise ValueError(f"Duplicate legacy requirement ID: {req.id}")
         finding = Finding.model_validate(row["finding"])

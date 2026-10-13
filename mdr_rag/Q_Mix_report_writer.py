@@ -1,9 +1,17 @@
 """Local Q-Mix-style deterministic report writer (not an external Q-Mix API)."""
 from pathlib import Path
+import re
 
 
 def clean(text) -> str:
     return str(text).replace("\r", " ").replace("\n", " ").replace("|", "\\|")
+
+
+def raw_quote(text) -> str:
+    # Preserve raw whitespace and prevent backticks inside source text from
+    # escaping its literal display block.
+    fence = "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
+    return f"{fence}text\n{text}\n{fence}"
 
 
 def write_markdown(assessment: dict, destination: Path) -> None:
@@ -51,7 +59,9 @@ def write_markdown(assessment: dict, destination: Path) -> None:
             f"**Requirement (draft):** {clean(req['requirement'])}", "",
             f"**Legal source:** `{req['legal_source']}`, PDF page {req['legal_page']}, "
             f"chunk `{req['legal_source_chunk_id']}`; SHA-256 `{req['legal_sha256']}`", "",
-            f"**Source quote:** “{clean(req['exact_quote'])}”", "",
+            (f"**Verified raw source quote:**\n\n{raw_quote(req['exact_quote'])}"
+             if row.get("legal_quote_verified") else
+             "**Source quote:** Raw span unverified; no exact quotation published."), "",
             f"**Draft applicability:** {clean(req['applies_to'])}", "",
             f"**Evidence status:** `{f['status']}`", "",
             f"**Audit:** {row.get('audit_status', 'legacy / unspecified — not newly verified')}", "",
@@ -68,6 +78,16 @@ def write_markdown(assessment: dict, destination: Path) -> None:
                 continue
             locator = f"PDF page {p['page']}" if p["page"] else f"text block {p['block']}"
             out.append(f"- `{id_}` — `{p['source']}`, {locator}; SHA-256 `{p['sha256']}`")
+        if row.get("claim_links"):
+            out += ["", "**Verified cited raw spans (provenance, not semantic entailment):**", ""]
+            for link in row["claim_links"]:
+                locator = f"PDF page {link['page']}" if link["page"] else f"text block {link['block']}"
+                out += [f"- Claim `{clean(link['claim_id'])}`: `{link['buffer_id']}`, `{clean(link['source'])}`, "
+                        f"{locator}, characters [{link['start']}:{link['end']}], {link['purpose']}",
+                        "", raw_quote(link["exact_quote"]), ""]
+        if row.get("citation_issues"):
+            out += ["", "**Provenance issues requiring review:**"]
+            out += [f"- {clean(issue)}" for issue in row["citation_issues"]]
         out += ["", "**Missing information / questions to investigate:**"]
         out += [f"- {clean(x)}" for x in f["missing_information"]] or ["- None identified in this partial review"]
         out += ["", "**Proposed actions for expert assessment:**"]

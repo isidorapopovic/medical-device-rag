@@ -26,6 +26,17 @@ def is_real_quote(quote: str, source_text: str) -> bool:
     return len(norm(quote)) >= 12 and norm(quote) in norm(source_text)
 
 
+def is_raw_quote(quote: str, source_text: str, start=None, end=None) -> bool:
+    """Exact character-span check; repeated quotations require explicit offsets."""
+    if not quote or (start is None) != (end is None):
+        return False
+    if start is not None:
+        return (type(start) is int and type(end) is int and 0 <= start < end <= len(source_text)
+                and source_text[start:end] == quote)
+    first = source_text.find(quote)
+    return first >= 0 and source_text.find(quote, first + 1) < 0
+
+
 def parse_pages(spec: str, maximum: int | None = None) -> set[int]:
     """User-visible PDF page numbers (1 based)."""
     pages: set[int] = set()

@@ -1,6 +1,6 @@
 """Strict, limited output vocabularies for extraction and assessment."""
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 
 class RequirementCandidate(BaseModel):
@@ -14,6 +14,20 @@ class RequirementBatch(BaseModel):
     items: list[RequirementCandidate]
 
 
+class QuotedReference(BaseModel):
+    source_id: str
+    exact_quote: str = Field(min_length=1)
+    start: StrictInt | None = Field(default=None, ge=0)
+    end: StrictInt | None = Field(default=None, gt=0)
+    purpose: Literal["legal_basis", "device_support", "contradiction", "applicability"] = "device_support"
+
+
+class FindingClaim(BaseModel):
+    claim_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    evidence: list[QuotedReference] = Field(default_factory=list)
+
+
 class Finding(BaseModel):
     status: Literal["supported", "partial", "not_found", "needs_review", "possibly_not_applicable"]
     explanation: str
@@ -21,6 +35,7 @@ class Finding(BaseModel):
     missing_information: list[str]
     recommended_actions: list[str]
     applicability_reason: str
+    claims: list[FindingClaim] = Field(default_factory=list)
 
 
 class Answer(BaseModel):
@@ -32,6 +47,8 @@ class Answer(BaseModel):
 class ClaimEvidence(BaseModel):
     source_id: str
     exact_quote: str = Field(min_length=12, description="Verbatim supporting quote from the cited passage")
+    start: StrictInt | None = Field(default=None, ge=0)
+    end: StrictInt | None = Field(default=None, gt=0)
 
 
 class AnswerClaim(BaseModel):

@@ -48,11 +48,12 @@ def test_report_generates(tmp_path):
     assert "Not a declaration of conformity" in target.read_text()
 
 
-def test_ask_abstains_when_model_citations_are_unverified(monkeypatch, capsys):
+def test_ask_abstains_when_model_citations_are_unverified(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(pipeline, "STATE", tmp_path / "state")
     passage = {
         "id": "L-verified",
         "text": "Risk management requirements in this source.",
-        "meta": {"source": "legal/mdr.pdf", "page": 12, "block": 1},
+        "meta": {"source": "legal/mdr.pdf", "page": 12, "block": 1, "sha256": "fixture-hash", "kind": "legal"},
     }
     monkeypatch.setattr(pipeline, "check_manifest", lambda: {})
     monkeypatch.setattr(
@@ -74,11 +75,12 @@ def test_ask_abstains_when_model_citations_are_unverified(monkeypatch, capsys):
     assert "L-invented" not in output
 
 
-def test_ask_displays_answer_with_verified_citation(monkeypatch, capsys):
+def test_ask_displays_answer_with_verified_citation(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(pipeline, "STATE", tmp_path / "state")
     passage = {
         "id": "L-verified",
         "text": "Risk management requirements in this source.",
-        "meta": {"source": "legal/mdr.pdf", "page": 12, "block": 1},
+        "meta": {"source": "legal/mdr.pdf", "page": 12, "block": 1, "sha256": "fixture-hash", "kind": "legal"},
     }
     monkeypatch.setattr(pipeline, "check_manifest", lambda: {})
     monkeypatch.setattr(
@@ -109,13 +111,22 @@ def test_ask_displays_answer_with_verified_citation(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "The source discusses risk management." in output
     assert "[L-verified] legal/mdr.pdf, PDF page 12" in output
+    import json
+    trace = json.loads(next((tmp_path / "state" / "evidence_runs").glob("ask-*/trace.json")).read_text())
+    assert [call["stage"] for call in trace["model_calls"]] == ["answer", "answer_support"]
+    assert trace["publication_status"] == "published"
+    assert len(trace["links"]) == 1
+    link = trace["links"][0]
+    raw = trace["source_buffer"][link["buffer_id"]]["text"]
+    assert raw[link["start"]:link["end"]] == link["exact_quote"]
 
 
-def test_ask_abstains_when_claim_verifier_rejects_answer(monkeypatch, capsys):
+def test_ask_abstains_when_claim_verifier_rejects_answer(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(pipeline, "STATE", tmp_path / "state")
     passage = {
         "id": "L-verified",
         "text": "Risk management requirements in this source.",
-        "meta": {"source": "legal/mdr.pdf", "page": 12, "block": 1},
+        "meta": {"source": "legal/mdr.pdf", "page": 12, "block": 1, "sha256": "fixture-hash", "kind": "legal"},
     }
     monkeypatch.setattr(pipeline, "check_manifest", lambda: {})
     monkeypatch.setattr(

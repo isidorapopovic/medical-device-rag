@@ -9,10 +9,13 @@ from .report_state import (
     CHECKPOINTS, Dependencies, ReportState, RequirementRecord, RequirementSection,
     RetrievedPassage, StageEvent, StateStore, export_report, fingerprint,
     invalidate, timestamp,
+    decode_state,
 )
 from .schemas import Finding
 from .search import reranking_enabled
 from . import search
+from .review_evidence import prepare_legal_anchor, validate_finding
+from .source_buffer import EvidenceRecorder, SourceBuffer, recording
 
 REVIEW_RULES = """You are an evidence-mapping assistant, NOT a regulator or legal decision maker.
 Evaluate the supplied historical MDR draft requirement only against the supplied
@@ -23,6 +26,12 @@ evidence; needs_review = ambiguous or contradictory; possibly_not_applicable =
 applicability requires expert verification. No status equals legal compliance.
 Do not infer applicability from lack of evidence. Mention insufficient context.
 Cite ONLY provided SOURCE_IDs in evidence_ids. Never fabricate source IDs.
+Return a claims inventory: one claim_id and text per factual claim, with source_id,
+exact_quote, purpose and optional raw start/end character offsets for every cited span.
+Quotes must be literal substrings of supplied text. Repeated quotes require explicit
+chosen offsets. Cite legal text as legal_basis and device text as device_support.
+Use the supplied LEGAL_SOURCE_ID for legal quotations. Do not treat genuine quotes
+as proof of semantic support or claim that an independent audit was performed.
 Missing from retrieval is NOT established non-compliance.
 Give concrete missing_information and recommended_actions; distinguish document
 changes from actual design/testing changes and don't assume either is necessary.
@@ -35,16 +44,17 @@ LIMITATIONS = [
     "Only selected PDF pages and uploaded device evidence were considered.",
     "Retrieval can miss relevant passages; missing evidence is not proof of non-compliance.",
     "Applicability, device classification and all final conclusions require specialist validation.",
-    "Stage 1 performs identifier checks only, not independent semantic or raw-span citation audits.",
+    "Stage 2 verifies raw-span provenance and model-context membership, not semantic entailment or full claim coverage.",
 ]
-QUERY_VERSION = "single-requirement-query-v1"
+QUERY_VERSION = "single-requirement-query-with-source-anchor-v2"
 RETRIEVAL_VERSION = "single-query-rrf-v1"
-VALIDATION_VERSION = "finding-id-check-v1"
+VALIDATION_VERSION = "finding-raw-span-provenance-v2"
 EXTRACTION_VERSION = "character-2000-overlap250-v1"
 REVIEW_INPUT = (
     "UNVERIFIED DEVICE PROFILE:\n{profile}\n\n"
     "LEGAL REQUIREMENT: {requirement}\nPROVISION: {provision}\n"
     "VERBATIM LEGAL TEXT: {quote}\nLEGAL SOURCE: {source} page {page}\n\n"
+    "LEGAL_SOURCE_ID: {legal_id}\n\n"
     "RETRIEVED DEVICE EXCERPTS:\n{evidence}"
 )
 
@@ -145,42 +155,75 @@ def synchronize(state, draft, manifest, profile, config):
             0, state.provenance["original_report"].get("total_extracted_requirements", 0) - len(state.sections))
 
 
-def perform_stage(stage, section, config, profile, app):
+def perform_stage(stage, section, config, profile, app, state, persist_trace):
     req = section.requirement
+    buffer = SourceBuffer(state.source_buffer)
+    recorder = EvidenceRecorder(buffer, section.model_calls, persist_trace, manifest=state.indexed_manifest)
     if stage == "applicability":
         # No applicability analyst exists yet. Preserve explicit uncertainty.
         section.applicability = "uncertain"
         section.applicability_reason = "Device profile is unverified; independent applicability review is not implemented."
     elif stage == "queries":
+        prepare_legal_anchor(section, buffer, app)
         section.queries = [f"{req.provision} {req.requirement} {req.exact_quote}"]
     elif stage == "retrieval":
-        found = app.hybrid_search(section.queries[0], "device", k=config["k"])
+        def persist_retrieval_trace():
+            state.source_buffer = buffer.snapshots
+            persist_trace()
+        recorder.persist = persist_retrieval_trace
+        with recording(recorder):
+            found = app.hybrid_search(section.queries[0], "device", k=config["k"])
         section.passages = [RetrievedPassage.model_validate(p) for p in found]
+        recorder.record_retrieved(found)
+        section.retrieved_buffer_ids = recorder.retrieved
     elif stage == "draft":
         found = [p.model_dump() for p in section.passages]
+        recorder.retrieved = section.retrieved_buffer_ids
+        presented = [buffer.presented(buffer.add_passage(p), end=min(len(p["text"]), 2200)) for p in found]
+        if section.legal_anchor is not None:
+            anchor = section.legal_anchor
+            presented.append(buffer.presented(anchor.buffer_id, anchor.start, anchor.end))
         prompt = REVIEW_INPUT.format(
             profile=json.dumps(profile, ensure_ascii=False), requirement=req.requirement,
-            provision=req.provision, quote=req.exact_quote, source=req.legal_source,
-            page=req.legal_page, evidence=app.evidence_context(found) if found else "NONE")
-        section.draft_finding = app.llm_parse(REVIEW_RULES, prompt, Finding)
+            provision=req.provision, quote=section.legal_anchor.exact_quote if section.legal_anchor else
+            "No verified raw legal anchor; assessment requires review.", source=req.legal_source,
+            legal_id=req.legal_source_chunk_id, page=req.legal_page,
+            evidence=app.evidence_context(found) if found else "NONE")
+        def persist_draft_trace():
+            state.source_buffer = buffer.snapshots
+            persist_trace()
+        recorder.persist = persist_draft_trace
+        trace = recorder.start("review_draft", config["llm_model"], REVIEW_RULES, prompt, presented)
+        section.draft_call_id = trace.call_id
+        # Save binding to this call before inference, even if inference is interrupted.
+        recorder.persist()
+        try:
+            section.draft_finding = app.llm_parse(REVIEW_RULES, prompt, Finding)
+        except Exception:
+            recorder.finish(trace, "failed")
+            raise
+        # Normal stage checkpoint saves output and completed trace together.
+        trace.outcome = "completed"
     elif stage == "completed":
-        finding = section.draft_finding.model_copy(deep=True)
-        good_ids = app.validate_ids(finding.evidence_ids, [p.model_dump() for p in section.passages])
-        if finding.status in {"supported", "partial"} and not good_ids:
-            finding.status = "needs_review"
-            finding.explanation += " [SYSTEM: supporting evidence citation was not verified.]"
-        finding.evidence_ids = good_ids
+        finding = validate_finding(section, buffer, app)
         section.finding = finding
         section.revision += 1
         section.finding_updated_at = timestamp()
-        section.audit_status = "identifier_checked_only"
+        section.audit_status = "raw_spans_checked"
         section.finding_history.append({"revision": section.revision,
             "at": section.finding_updated_at, "requirement": req.model_dump(),
             "finding": finding.model_dump(), "dependencies": section.dependencies.model_dump(),
             "retrieved_evidence": [{"id": p.id, **p.meta, "excerpt": p.text}
-                                   for p in section.passages]})
+                                   for p in section.passages],
+            "retrieved_buffer_ids": section.retrieved_buffer_ids,
+            "draft_call_id": section.draft_call_id,
+            "legal_anchor": section.legal_anchor.model_dump() if section.legal_anchor else None,
+            "legal_anchor_issue": section.legal_anchor_issue,
+            "claim_links": [link.model_dump() for link in section.claim_links],
+            "citation_issues": section.citation_issues})
         section.execution_status = "completed"
         section.stale_reasons = []
+    state.source_buffer = buffer.snapshots
 
 
 def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False):
@@ -238,6 +281,8 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
             section = state.sections[requirement_id]
             section.checkpoint = "pending"
             section.queries, section.passages, section.draft_finding = [], [], None
+            section.retrieved_buffer_ids, section.claim_links = [], []
+            section.draft_call_id = None
             section.execution_status = "stale"
             section.stale_reasons = ["explicit_refresh"]
             section.updated_at = timestamp()
@@ -254,8 +299,14 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
             state = store.save(state, state.revision)
             section = state.sections[key]
             for stage in CHECKPOINTS[CHECKPOINTS.index(section.checkpoint) + 1:]:
+                def persist_trace():
+                    committed = store.save(state, state.revision)
+                    # Keep this stage's live objects; only advance the committed
+                    # revision guard while the operation is still in progress.
+                    state.revision, state.updated_at = committed.revision, committed.updated_at
+                    state.summarize()
                 try:
-                    perform_stage(stage, section, config, profile, app)
+                    perform_stage(stage, section, config, profile, app, state, persist_trace)
                 except Exception as exc:
                     section.execution_status = "failed"
                     # Do not persist exceptions that may contain source excerpts.
@@ -289,8 +340,8 @@ def render_report(assessment_id: str, *, historical=False, revision=None):
             if not historical or revision < 1:
                 raise ValueError("--revision requires --historical and a positive revision")
             if revision != state.revision:
-                state = ReportState.model_validate_json(
-                    (store.directory / "revisions" / f"{revision:08d}.json").read_text(encoding="utf-8"))
+                state = decode_state(json.loads(
+                    (store.directory / "revisions" / f"{revision:08d}.json").read_text(encoding="utf-8")))
                 if state.assessment_id != assessment_id or state.revision != revision:
                     raise RuntimeError("Historical snapshot identity/revision mismatch; preserve the file and investigate")
         if not historical:
