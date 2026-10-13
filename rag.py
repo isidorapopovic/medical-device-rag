@@ -1,5 +1,8 @@
 
-"""Legacy Gemini prototype; use main.py for the supported Ollama application."""
+"""Legacy Gemini prototype; imports mdr_rag.tls and mdr_rag.quota, absent here.
+
+Use main.py for the supported Ollama application.
+"""
 import os
 import sys
 import time

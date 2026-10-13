@@ -2,7 +2,7 @@
 
 The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload and preview); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
-`rag.py` is a separate, older Gemini prototype retained for reference. It is not the supported application, is not covered by the setup instructions below, and may not work with the current package. Use `main.py` instead.
+`rag.py` is a separate, older Gemini prototype retained for reference, not the supported application. It imports `mdr_rag.tls` and `mdr_rag.quota`, which are not present in this checkout, and expects Gemini dependencies and credentials not used by the modular app. Do not use it for the supported workflow; use `main.py` instead. The script is retained in place and has not been run, so its separate Chroma collection/index has not been changed.
 
 ## Quick start
 
