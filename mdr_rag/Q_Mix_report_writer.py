@@ -63,7 +63,9 @@ def write_markdown(assessment: dict, destination: Path) -> None:
             (f"**Verified raw source quote:**\n\n{raw_quote(req['exact_quote'])}"
              if row.get("legal_quote_verified") else
              "**Source quote:** Raw span unverified; no exact quotation published."), "",
-            f"**Draft applicability:** {clean(req['applies_to'])}", "",
+            f"**Legal scope (draft):** {clean(req['applies_to'])}", "",
+            f"**Applicability result:** {clean((row.get('applicability') or {}).get('status', 'unverified legacy'))}", "",
+            f"**Applicability reason:** {clean((row.get('applicability') or {}).get('reason', 'Original audit limitations retained.'))}", "",
             f"**Evidence status:** `{f['status']}`", "",
             f"**Audit:** {row.get('audit_status', 'legacy / unspecified — not newly verified')}", "",
             f"**Assessment:** {clean(f['explanation'])}", "",
@@ -99,6 +101,15 @@ def write_markdown(assessment: dict, destination: Path) -> None:
                         if row.get("audit_status") == "semantic_checked" else
                         "**Atomic obligation coverage (model self-assessment; semantics unverified):**")]
             out += [f"- `{clean(c['obligation_id'])}`: {c['status']}; {clean(c['explanation'])}" for c in f['obligation_coverage']]
+        applicability = row.get("applicability") or {}
+        if applicability.get("missing_facts"):
+            out += ["", "**Missing applicability facts (profile remains unverified):**"]
+            out += [f"- {clean(fact)}" for fact in applicability["missing_facts"]]
+        if applicability.get("retrieval_policy"):
+            out += ["", f"**Scope search policy:** {clean(applicability['retrieval_policy'])}; tentative scope does not skip retrieval."]
+        if f.get("claims"):
+            out += ["", "**Published structured claims:**"]
+            out += [f"- `{clean(c['claim_id'])}` ({clean(c.get('role', 'legacy unspecified'))}): {clean(c['text'])}" for c in f["claims"]]
         if row.get("claim_links"):
             out += ["", "**Verified cited raw spans (provenance, not semantic entailment):**", ""]
             for link in row["claim_links"]:

@@ -357,7 +357,7 @@ def test_read_only_schema_v1_upgrade_never_invents_raw_provenance(workflow):
     data["schema_version"] = 1
     data.pop("source_buffer")
     for section in data["sections"].values():
-        for key in ("legal_anchor", "legal_anchor_issue", "retrieved_buffer_ids", "model_calls", "draft_call_id", "claim_links", "citation_issues"):
+        for key in ("applicability_result", "legal_anchor", "legal_anchor_issue", "retrieved_buffer_ids", "model_calls", "draft_call_id", "claim_links", "citation_issues"):
             section.pop(key)
         section["audit_status"] = "identifier_checked_only"
         for revision in section["finding_history"]:

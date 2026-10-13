@@ -26,7 +26,7 @@ def validate_section(section, buffer, recorder, config, app):
         revision, context = section_bindings(section, buffer, presented, config)
         data = {"claim_revision": revision, "context_hash": context,
             "atomic_requirement": section.requirement.model_dump(), "atomic_obligations": obligations,
-            "applicability": {"result": section.applicability, "reason": section.applicability_reason},
+            "applicability": section.applicability_result.model_dump() if section.applicability_result else {"result": section.applicability, "reason": section.applicability_reason},
             "draft": draft.model_dump(), "sources": [
                 {**buffer.get_passage(p.buffer_id).model_dump(exclude={"text"}),
                  "text": buffer.get_passage(p.buffer_id).text[p.start:p.end],

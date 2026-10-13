@@ -128,7 +128,7 @@ def test_calibrated_strict_pass_and_context_mismatch(gated, monkeypatch, tmp_pat
     # A valid calibration for another corpus must block strict reuse, preserving retrieval.
     other = calibration(ctx.model_copy(update={"corpus_fingerprint": "other-corpus"}), rows)
     path.write_text(other.model_dump_json())
-    after = pipeline.run_review(assessment_id="demo", resume=True, limit=1)
+    after = pipeline.run_review(assessment_id="demo", resume=True, limit=1, use_env_config=True)
     assert after.sections["R1"].evidence_gate.reason == "calibration_mismatch"
     assert after.sections["R1"].finding.status == "insufficient_evidence"
     assert len(gated[2].calls) == calls
@@ -372,7 +372,7 @@ def test_malformed_calibration_never_overwrites_report(gated, monkeypatch, tmp_p
     monkeypatch.setenv("EVIDENCE_GATE_MODE", "strict")
     monkeypatch.setenv("EVIDENCE_GATE_CALIBRATION", str(path))
     with pytest.raises(RuntimeError, match="Malformed calibration"):
-        pipeline.run_review(assessment_id="demo", resume=True, limit=1)
+        pipeline.run_review(assessment_id="demo", resume=True, limit=1, use_env_config=True)
     assert gated[0]["store"].path.read_bytes() == original
 
 

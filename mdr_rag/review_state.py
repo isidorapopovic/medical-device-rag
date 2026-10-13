@@ -21,6 +21,9 @@ from .claim_audit import render_finding, REVIEWER_RULES, CitationAuditor, valida
 from .review_validation import validate_section, REPAIR_RULES
 from .evidence_gate import settings as gate_settings, gate_context, obligation_inventory, screen
 from .source_buffer import EvidenceRecorder, SourceBuffer, recording
+from .saved_configuration import resolve, environment, scoped_environment
+from .applicability import ApplicabilityAnalyst
+from .reranking import cache_folder
 
 REVIEW_RULES = """You are an evidence-mapping assistant, NOT a regulator or legal decision maker.
 Evaluate the supplied historical MDR draft requirement only against the supplied
@@ -66,6 +69,7 @@ VALIDATION_VERSION = "claim-inventory-semantic-policy-v6"
 EXTRACTION_VERSION = "character-2000-overlap250-v1"
 REVIEW_INPUT = (
     "UNVERIFIED DEVICE PROFILE:\n{profile}\n\n"
+    "APPLICABILITY (tentative): {applicability}\n\n"
     "LEGAL REQUIREMENT: {requirement}\nPROVISION: {provision}\n"
     "VERBATIM LEGAL TEXT: {quote}\nLEGAL SOURCE: {source} page {page}\n\n"
     "LEGAL_SOURCE_ID: {legal_id}\n\n"
@@ -113,9 +117,10 @@ def configuration(k: int) -> dict:
             "planner_hash": fingerprint([PLANNER_RULES, inspect.getsource(plan_queries)]), "k": k, "retrieval_mode": mode, "rerank_enabled": reranking_enabled(),
             "llm_model": model, "embedding_model": embedding,
             "num_ctx": ollama_num_ctx(), "reranker_backend": backend, "reranker_identity": identity,
-            "extraction_version": EXTRACTION_VERSION,
+            "cross_encoder_cache": str(cache_folder()), "extraction_version": EXTRACTION_VERSION,
             "query_version": QUERY_VERSION, "retrieval_version": RETRIEVAL_VERSION,
             "review_prompt_hash": fingerprint([REVIEW_RULES, REVIEW_INPUT, StructuredFinding.model_json_schema()]),
+            "applicability_version": fingerprint(inspect.getsource(ApplicabilityAnalyst)),
             "validation_version": fingerprint([VALIDATION_VERSION, REVIEWER_RULES, REPAIR_RULES, reviewer_schema(), inspect.getsource(CitationAuditor), inspect.getsource(validation_policy), inspect.getsource(validate_section)])}
 
 
@@ -128,6 +133,8 @@ def corpus_hash(manifest: dict) -> str:
 
 def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, config: dict) -> Dependencies:
     return Dependencies(
+        applicability=fingerprint([config["applicability_version"], requirement.applies_to,
+            requirement.legal_sha256, requirement.legal_source_chunk_id, requirement.exact_quote]),
         profile=fingerprint(profile), requirement=fingerprint(requirement.model_dump()),
         corpus=corpus, query=fingerprint({key: config[key] for key in
             ("query_version", "multi_query_enabled", "multi_query_max", "query_planner", "planner_hash")}
@@ -154,7 +161,8 @@ def scope_from_draft(draft: dict) -> dict:
 
 
 def new_state(assessment_id, draft, manifest, profile, config):
-    records = [RequirementRecord.model_validate(row) for row in draft["requirements"]]
+    from .roles import RequirementAnalyst
+    records = RequirementAnalyst().register(draft).requirements
     if len({req.id for req in records}) != len(records):
         raise ValueError("Duplicate requirement IDs in register")
     corpus = corpus_hash(manifest)
@@ -169,7 +177,8 @@ def new_state(assessment_id, draft, manifest, profile, config):
 
 
 def synchronize(state, draft, manifest, profile, config):
-    records = [RequirementRecord.model_validate(row) for row in draft["requirements"]]
+    from .roles import RequirementAnalyst
+    records = RequirementAnalyst().register(draft).requirements
     if len({req.id for req in records}) != len(records):
         raise ValueError("Duplicate requirement IDs in register")
     if set(state.sections) - {req.id for req in records}:
@@ -279,6 +288,7 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
             anchor = section.legal_anchor
             presented.append(buffer.presented(anchor.buffer_id, anchor.start, anchor.end))
         prompt = REVIEW_INPUT.format(
+            applicability=json.dumps(section.applicability_result.model_dump() if section.applicability_result else {"status": section.applicability}, ensure_ascii=False),
             profile=json.dumps(profile, ensure_ascii=False), requirement=req.requirement,
             provision=req.provision, quote=section.legal_anchor.exact_quote if section.legal_anchor else
             "No verified raw legal anchor; assessment requires review.", source=req.legal_source,
@@ -325,7 +335,8 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
         section.finding_updated_at = timestamp()
         section.finding_history.append({"revision": section.revision,
             "at": section.finding_updated_at, "requirement": req.model_dump(),
-            "finding": finding.model_dump(), "dependencies": section.dependencies.model_dump(),
+            "finding": finding.model_dump(),
+            "applicability": section.applicability_result.model_dump() if section.applicability_result else None, "dependencies": section.dependencies.model_dump(),
             "retrieved_evidence": [{"id": p.id, **p.meta, "excerpt": p.text}
                                    for p in section.passages],
             "query_plan": section.query_plan, "retrieval_trace": section.retrieval_trace,
@@ -344,7 +355,7 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
     state.source_buffer = buffer.snapshots
 
 
-def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False):
+def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False, config_overrides=None, use_env_config=False):
     from . import pipeline as app
 
     if limit is not None and limit < 1:
@@ -360,6 +371,8 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
     if (resume or requirement_id) and not assessment_id:
         raise ValueError("--resume and --requirement-id require --assessment-id")
     assessment_id = assessment_id or "assessment-" + uuid4().hex[:12]
+    from .roles import AssessmentOrchestrator
+    orchestrator = AssessmentOrchestrator()
     store = StateStore(app.STATE, assessment_id)
     with store.locked():
         exists = store.path.exists()
@@ -372,87 +385,88 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
         draft = app.load_json(app.STATE / "requirements_draft.json")
         if requirement_id and requirement_id not in {req["id"] for req in draft["requirements"]}:
             raise ValueError(f"Unknown requirement ID: {requirement_id}")
-        config = configuration(k if k is not None else (state.config.get("k", 7) if state else 7))
-        try:
-            manifest = app.check_manifest()
-            app.check_regulation_alignment(draft)
-        except (RuntimeError, FileNotFoundError) as exc:
-            # Persist staleness even if the live index cannot be reused. Do not rebuild it.
-            if state is not None:
-                for section in state.sections.values():
-                    invalid = section.dependencies.model_copy(update={"corpus": "unavailable"}) \
-                        if section.dependencies else dependencies(section.requirement, state.device_profile,
-                                                                 "unavailable", config)
-                    invalidate(section, invalid)
-                state = store.save(state, state.revision)
-                export_report(state, store.directory)
-            raise RuntimeError("Existing corpus/register alignment failed; saved findings are stale. "
-                               "Verify the source/index manually or render explicitly with report --historical.") from exc
-        if not any(item["kind"] == "device" for item in manifest["files"]):
-            raise RuntimeError("Device corpus is absent; no review can be generated")
-        profile = app.profile_data()
-        if state is None:
-            state = new_state(assessment_id, draft, manifest, profile, config)
-        else:
-            synchronize(state, draft, manifest, profile, config)
-        if refresh:
-            section = state.sections[requirement_id]
-            section.checkpoint = "pending"
-            section.queries, section.passages, section.draft_finding = [], [], None
-            section.query_plan, section.retrieval_trace = None, None
-            section.evidence_gate = None
-            section.structured_draft, section.validated_finding = None, None
-            section.repair_attempts = 0
-            section.retrieved_buffer_ids, section.claim_links = [], []
-            section.draft_call_id = None
-            section.execution_status = "stale"
-            section.stale_reasons = ["explicit_refresh"]
-            section.updated_at = timestamp()
-        state = store.save(state, state.revision)
-        keys = [requirement_id] if requirement_id else list(state.sections)[:limit]
-        for key in keys:
-            section = state.sections[key]
-            if section.execution_status == "completed":
-                continue
-            section.attempt_count += 1
-            section.execution_status = "running"
-            section.failure_reason = None
-            section.updated_at = timestamp()
-            state = store.save(state, state.revision)
-            section = state.sections[key]
-            for stage in CHECKPOINTS[CHECKPOINTS.index(section.checkpoint) + 1:]:
-                def persist_trace():
-                    committed = store.save(state, state.revision)
-                    # Keep this stage's live objects; only advance the committed
-                    # revision guard while the operation is still in progress.
-                    state.revision, state.updated_at = committed.revision, committed.updated_at
-                    state.summarize()
-                try:
-                    perform_stage(stage, section, config, profile, app, state, persist_trace)
-                except Exception as exc:
-                    section.execution_status = "failed"
-                    # Do not persist exceptions that may contain source excerpts.
-                    section.failure_reason = f"{type(exc).__name__} during {stage}"
-                    section.updated_at = timestamp()
-                    state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="failed"))
+        config = resolve(state.config if state else None, k if k is not None else (state.config.get("k", 7) if state else 7), config_overrides, use_env_config, configuration)
+        with scoped_environment(environment(config)):
+            try:
+                manifest = app.check_manifest()
+                app.check_regulation_alignment(draft)
+            except (RuntimeError, FileNotFoundError) as exc:
+                # Persist staleness even if the live index cannot be reused. Do not rebuild it.
+                if state is not None:
+                    for section in state.sections.values():
+                        invalid = section.dependencies.model_copy(update={"corpus": "unavailable"}) \
+                            if section.dependencies else dependencies(section.requirement, state.device_profile,
+                                                                     "unavailable", config)
+                        invalidate(section, invalid)
                     state = store.save(state, state.revision)
-                    export_report(state, store.directory)
-                    raise
-                section.checkpoint = stage
+                    orchestrator.report_writer.write(state, store.directory)
+                raise RuntimeError("Existing corpus/register alignment failed; saved findings are stale. "
+                                   "Verify the source/index manually or render explicitly with report --historical.") from exc
+            if not any(item["kind"] == "device" for item in manifest["files"]):
+                raise RuntimeError("Device corpus is absent; no review can be generated")
+            profile = app.profile_data()
+            if state is None:
+                state = new_state(assessment_id, draft, manifest, profile, config)
+            else:
+                synchronize(state, draft, manifest, profile, config)
+            if refresh:
+                section = state.sections[requirement_id]
+                section.checkpoint = "pending"
+                section.queries, section.passages, section.draft_finding = [], [], None
+                section.query_plan, section.retrieval_trace = None, None
+                section.evidence_gate = None
+                section.structured_draft, section.validated_finding = None, None
+                section.repair_attempts = 0
+                section.retrieved_buffer_ids, section.claim_links = [], []
+                section.draft_call_id = None
+                section.execution_status = "stale"
+                section.stale_reasons = ["explicit_refresh"]
                 section.updated_at = timestamp()
-                state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="completed"))
-                # Persistence/export errors are not stage failures: canonical state
-                # determines whether the next invocation repeats this operation.
+            state = store.save(state, state.revision)
+            keys = [requirement_id] if requirement_id else list(state.sections)[:limit]
+            for key in keys:
+                section = state.sections[key]
+                if section.execution_status == "completed":
+                    continue
+                section.attempt_count += 1
+                section.execution_status = "running"
+                section.failure_reason = None
+                section.updated_at = timestamp()
                 state = store.save(state, state.revision)
                 section = state.sections[key]
-                export_report(state, store.directory)
-        export_report(state, store.directory)
-        export_report(state, app.REPORTS)
+                for stage in CHECKPOINTS[CHECKPOINTS.index(section.checkpoint) + 1:]:
+                    def persist_trace():
+                        committed = store.save(state, state.revision)
+                        # Keep this stage's live objects; only advance the committed
+                        # revision guard while the operation is still in progress.
+                        state.revision, state.updated_at = committed.revision, committed.updated_at
+                        state.summarize()
+                    try:
+                        orchestrator.stage(stage, section, config, profile, app, state, persist_trace, perform_stage)
+                    except Exception as exc:
+                        section.execution_status = "failed"
+                        # Do not persist exceptions that may contain source excerpts.
+                        section.failure_reason = f"{type(exc).__name__} during {stage}"
+                        section.updated_at = timestamp()
+                        state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="failed"))
+                        state = store.save(state, state.revision)
+                        orchestrator.report_writer.write(state, store.directory)
+                        raise
+                    section.checkpoint = stage
+                    section.updated_at = timestamp()
+                    state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="completed"))
+                    # Persistence/export errors are not stage failures: canonical state
+                    # determines whether the next invocation repeats this operation.
+                    state = store.save(state, state.revision)
+                    section = state.sections[key]
+                    orchestrator.report_writer.write(state, store.directory)
+            orchestrator.report_writer.write(state, store.directory)
+            orchestrator.report_writer.write(state, app.REPORTS)
     print(f"Assessment {assessment_id}: saved {store.path}; compatibility exports in {store.directory} and {app.REPORTS}")
     return state
 
 
-def render_report(assessment_id: str, *, historical=False, revision=None):
+def render_report(assessment_id: str, *, historical=False, revision=None, config_overrides=None, use_env_config=False):
     from . import pipeline as app
 
     store = StateStore(app.STATE, assessment_id)
@@ -469,14 +483,16 @@ def render_report(assessment_id: str, *, historical=False, revision=None):
         if not historical:
             if state.provenance.get("legacy_source") and any(s.dependencies is None for s in state.sections.values()):
                 raise RuntimeError("Imported legacy findings lack dependency validation. Use --historical or resume to recompute.")
-            draft = app.load_json(app.STATE / "requirements_draft.json")
-            try:
-                manifest = app.check_manifest()
-                app.check_regulation_alignment(draft)
-            except (RuntimeError, FileNotFoundError) as exc:
-                raise RuntimeError("Cannot render this snapshot as current. Use --historical or validate the live index.") from exc
-            synchronize(state, draft, manifest, app.profile_data(), configuration(state.config["k"]))
-            state = store.save(state, state.revision)
+            config = resolve(state.config, state.config["k"], config_overrides, use_env_config, configuration)
+            with scoped_environment(environment(config)):
+                draft = app.load_json(app.STATE / "requirements_draft.json")
+                try:
+                    manifest = app.check_manifest()
+                    app.check_regulation_alignment(draft)
+                except (RuntimeError, FileNotFoundError) as exc:
+                    raise RuntimeError("Cannot render this snapshot as current. Use --historical or validate the live index.") from exc
+                synchronize(state, draft, manifest, app.profile_data(), config)
+                state = store.save(state, state.revision)
         destination = store.directory / (f"historical-{state.revision}" if historical else "exports")
         report = export_report(state, destination, historical=historical)
     print(f"Report saved to {destination}")

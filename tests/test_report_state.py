@@ -258,7 +258,7 @@ def test_uncited_new_corpus_file_invalidates_all_sections(workflow):
 def test_model_change_redrafts_without_retrieving(workflow, monkeypatch):
     pipeline.run_review(assessment_id="demo")
     monkeypatch.setenv("OLLAMA_LLM_MODEL", "synthetic-new-model")
-    pipeline.run_review(assessment_id="demo", resume=True)
+    pipeline.run_review(assessment_id="demo", resume=True, use_env_config=True)
     assert len(workflow["calls"]["retrieval"]) == 3
     assert len(workflow["calls"]["llm"]) == 6
 
@@ -477,7 +477,7 @@ def test_cli_passes_persistence_options_without_inference(monkeypatch):
                                      "--requirement-id", "R2", "--refresh"])
     assert main.main() == 0
     assert calls == [((None, None), {"assessment_id": "demo", "requirement_id": "R2",
-                                    "refresh": True, "resume": False})]
+                                    "refresh": True, "resume": False, "config_overrides": {}, "use_env_config": False})]
 
 
 def ask_fixture(output, prompt, quote="Risk management requirements in this source."):

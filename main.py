@@ -23,7 +23,7 @@ def main():
         "--rerank", action="store_true",
         help="Use the local Ollama LLM to rerank retrieved candidates (slower)",
     )
-    rerank_options.add_argument("--rerank-backend", choices=["none", "llm", "cross_encoder"],
+    rerank_options.add_argument("--rerank-backend", "--reranker", choices=["none", "llm", "cross_encoder"],
                                 help="Select a local reranker backend (before the command)")
     subs = parser.add_subparsers(dest="command", required=True)
     subs.add_parser("inspect", help="List files and readable PDF pages")
@@ -39,11 +39,13 @@ def main():
     review.add_argument("--limit", type=int, default=None, help="Only first N requirements (marks output partial)")
     review.add_argument("--k", type=int, default=None, help="Device chunks per requirement (new: 7; resume: saved value)")
     review.add_argument("--assessment-id", help="Persistent assessment ID (generated for a new run if omitted)")
+    review.add_argument("--use-env-config", action="store_true", help="Explicitly adopt current environment settings and invalidate affected stages")
     review.add_argument("--resume", action="store_true", help="Continue pending, failed or stale checkpoints")
     review.add_argument("--requirement-id", help="Update only this existing requirement")
     review.add_argument("--refresh", action="store_true", help="Create a new finding revision for --requirement-id")
     report = subs.add_parser("report", help="Render saved assessment without inference")
     report.add_argument("--assessment-id", required=True)
+    report.add_argument("--use-env-config", action="store_true", help="Check current environment configuration instead of saved settings")
     report.add_argument("--historical", action="store_true", help="Explicitly render a historical snapshot without current dependencies")
     report.add_argument("--revision", type=int, help="Saved state revision (requires --historical)")
     migrate = subs.add_parser("import-legacy", help="Non-destructively import a legacy assessment into a new ID")
@@ -79,6 +81,11 @@ def main():
     if args.rerank_backend is not None:
         os.environ["RERANK_BACKEND"] = args.rerank_backend
         os.environ["RERANK_ENABLED"] = "false" if args.rerank_backend == "none" else "true"
+    config_overrides = {}
+    if args.retrieval is not None:
+        config_overrides["retrieval_mode"] = args.retrieval
+    if args.rerank or args.rerank_backend is not None:
+        config_overrides["reranker_backend"] = "llm" if args.rerank else args.rerank_backend
     try:
         if args.command == "inspect":
             inspect_files()
@@ -92,10 +99,10 @@ def main():
             extract_requirements(args.pages, args.legal_file)
         elif args.command == "review":
             run_review(args.limit, args.k, assessment_id=args.assessment_id, resume=args.resume,
-                       requirement_id=args.requirement_id, refresh=args.refresh)
+                       requirement_id=args.requirement_id, refresh=args.refresh, config_overrides=config_overrides, use_env_config=args.use_env_config)
         elif args.command == "report":
             from mdr_rag.review_state import render_report
-            render_report(args.assessment_id, historical=args.historical, revision=args.revision)
+            render_report(args.assessment_id, historical=args.historical, revision=args.revision, config_overrides=config_overrides, use_env_config=args.use_env_config)
         elif args.command == "import-legacy":
             from pathlib import Path
             from mdr_rag.core import STATE

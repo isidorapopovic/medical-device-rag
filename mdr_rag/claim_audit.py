@@ -199,7 +199,7 @@ def model_payload(data, buffer, presented):
 def section_bindings(section, buffer, presented, config):
     revision, context = bindings(section.structured_draft, buffer, presented,
         section.requirement.model_dump(),
-        {"result": section.applicability, "reason": section.applicability_reason},
+        section.applicability_result.model_dump() if section.applicability_result else {"result": section.applicability, "reason": section.applicability_reason},
         [o.model_dump() for o in section.evidence_gate.obligations])
     return revision, content_hash([context, config["llm_model"], config["num_ctx"],
                                    config["validation_version"], section.draft_call_id])

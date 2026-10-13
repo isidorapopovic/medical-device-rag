@@ -21,6 +21,7 @@ from .schemas import Finding, StructuredFinding
 from .query_planner import QueryPlan
 from .retrieval_trace import RetrievalTrace
 from .evidence_gate import GateDecision
+from .applicability import ApplicabilityResult
 from .source_buffer import ClaimEvidenceLink, ModelCallTrace, SourceBuffer, SourcePassage
 
 
@@ -60,6 +61,7 @@ class RetrievedPassage(StateModel):
 
 
 class Dependencies(StateModel):
+    applicability: str = ""
     profile: str
     requirement: str
     corpus: str
@@ -84,6 +86,7 @@ class RequirementSection(StateModel):
     execution_status: Literal["pending", "running", "completed", "failed", "stale"] = "pending"
     checkpoint: Checkpoint = "pending"
     applicability: Literal["applicable", "uncertain", "possibly_not_applicable"] = "uncertain"
+    applicability_result: ApplicabilityResult | None = None
     applicability_reason: str = "User profile and applicability have not been independently verified."
     queries: list[str] = Field(default_factory=list)
     query_plan: dict | None = None
@@ -206,6 +209,13 @@ class ReportState(StateModel):
                     buffer.get_passage(key)
                 for item in trace.presented:
                     buffer.validate_presented(item)
+            if section.applicability_result is not None:
+                if (section.applicability_result.status, section.applicability_result.reason) != (section.applicability, section.applicability_reason):
+                    raise ValueError("Applicability result does not match saved section scope")
+                for citation in section.applicability_result.legal_citations:
+                    buffer.validate_link(citation)
+                    if citation.kind != "legal":
+                        raise ValueError("Applicability legal conditions require legal citations")
             if section.legal_anchor is not None:
                 buffer.validate_link(section.legal_anchor)
             for link in section.claim_links:
@@ -376,7 +386,7 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
     if not changed:
         return False
     # Earliest valid checkpoint, before the affected operation.
-    retain = {"profile": "pending", "requirement": "applicability",
+    retain = {"applicability": "pending", "profile": "pending", "requirement": "applicability",
               "query": "applicability", "corpus": "queries", "retrieval": "queries",
               "gate": "retrieval", "review": "gate", "validation": "draft"}
     earliest = min([CHECKPOINTS.index(section.checkpoint)] +
@@ -401,6 +411,7 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
         section.claim_links = []
         section.citation_issues = []
     if earliest == 0:
+        section.applicability_result = None
         section.applicability = "uncertain"
         section.applicability_reason = "Profile changed or not verified; applicability requires human review."
     section.execution_status = "stale"
@@ -461,6 +472,7 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
             "finding_updated_at": section.finding_updated_at,
             "execution_status": section.execution_status,
             "audit_status": section.audit_status,
+            "applicability": (published.get("applicability") or {"status": "uncertain", "reason": "Legacy applicability was not newly assessed.", "missing_facts": [], "human_verified": False}),
             "legal_anchor": anchor,
             "legal_quote_verified": anchor is not None,
             "legal_anchor_issue": published.get("legal_anchor_issue", "legacy_raw_span_unverified" if not anchor else None),
@@ -495,7 +507,9 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
         "status_counts": dict(Counter(row["finding"]["status"] for row in rows)),
         "execution_counts": state.execution_counts,
         "sections": {key: {"execution_status": s.execution_status, "checkpoint": s.checkpoint,
-                           "revision": s.revision, "stale_reasons": s.stale_reasons,
+                           "revision": s.revision, "requirement": s.requirement.model_dump(),
+                           "retrieved_buffer_ids": s.retrieved_buffer_ids, "stale_reasons": s.stale_reasons,
+                           "applicability": s.applicability_result.model_dump() if s.applicability_result else None,
                            "failure_reason": s.failure_reason, "audit_status": s.audit_status,
                            "evidence_gate": s.evidence_gate.model_dump() if s.evidence_gate else None}
                      for key, s in state.sections.items()},
