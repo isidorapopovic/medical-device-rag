@@ -3,6 +3,7 @@ import os
 from contextlib import contextmanager
 
 ENV_FIELDS = {
+    "ollama_gpu_layers": "OLLAMA_NUM_GPU",
     "retrieval_mode": "RETRIEVAL_MODE", "llm_model": "OLLAMA_LLM_MODEL",
     "embedding_model": "EMBEDDING_MODEL", "num_ctx": "OLLAMA_NUM_CTX",
     "multi_query_enabled": "MULTI_QUERY_ENABLED", "query_planner": "QUERY_PLANNER",

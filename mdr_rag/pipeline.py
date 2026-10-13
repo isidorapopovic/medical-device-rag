@@ -7,7 +7,7 @@ from pathlib import Path
 import pymupdf as fitz
 
 from .core import DOCS, REPORTS, STATE, digest, is_real_quote, is_raw_quote, location, norm, parse_pages, validate_ids
-from .config import ollama_num_ctx
+from .config import ollama_num_ctx, ollama_device_options
 from .schemas import Answer, AnswerSupportVerification, Finding, RequirementBatch
 from .search import collection, hybrid_search, legal_chunks, rebuild_index
 from .Q_Mix_report_writer import write_markdown
@@ -38,7 +38,7 @@ def llm_parse(instructions: str, input_text: str, model_type):
             {"role": "user", "content": input_text},
         ],
         format=model_type.model_json_schema(),
-        options={"temperature": 0, "num_ctx": ollama_num_ctx()},
+        options={"temperature": 0, "num_ctx": ollama_num_ctx(), **ollama_device_options()},
         think=False,
     )
     try:

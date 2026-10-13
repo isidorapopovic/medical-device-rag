@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "dataset_type": "human_gold",
+  "human_validated": false,
+  "reviewer": "REPLACE_WITH_HUMAN_ADJUDICATOR",
+  "evaluation_fingerprint": "REPLACE_FROM_FROZEN_EVALUATION",
+  "cases": [
+    {
+      "query_id": "REPLACE_FROM_EVALUATION",
+      "assessment_id": "REPLACE_FROM_EVALUATION",
+      "state_revision": 1,
+      "state_fingerprint": "REPLACE_FROM_EVALUATION",
+      "claim_revision": "REPLACE_FROM_EVALUATION",
+      "context_hash": "REPLACE_FROM_EVALUATION",
+      "claims": [{"claim_id": "REPLACE_FROM_PUBLISHED_INVENTORY", "verdict": "REPLACE_WITH_HUMAN_VERDICT", "contradiction_missed": null}]
+    }
+  ]
+}

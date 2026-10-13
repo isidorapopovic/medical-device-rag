@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from mdr_rag.embedding_viz import embedding_statistics, unit_vectors
-from mdr_rag import evaluation
+from mdr_rag import evaluation, search, pipeline
 from mdr_rag.evaluation import fusion, load_gold, rank_scores
 from mdr_rag.graph_viz import build_evidence_graph
 from mdr_rag.search import rerank_passages
@@ -103,10 +103,10 @@ def test_evaluate_reports_hybrid_reranking_against_gold(monkeypatch, tmp_path):
         lambda: {"files": [{"source": "legal/a.pdf", "sha256": "hash"}],
                  "embedding_model": "test-embedding"},
     )
-    monkeypatch.setattr(evaluation, "collection", FakeCollection)
-    monkeypatch.setattr(evaluation, "embeddings", lambda texts: [[1.0, 0.0]])
+    monkeypatch.setattr(search, "collection", FakeCollection)
+    monkeypatch.setattr(search, "embeddings", lambda texts: [[1.0, 0.0]])
     monkeypatch.setattr(
-        evaluation, "rerank_passages",
+        search, "rerank_passages",
         lambda query, passages: sorted(passages, key=lambda p: p["id"] != "C"),
     )
     gold_path = tmp_path / "gold.json"
@@ -117,6 +117,7 @@ def test_evaluate_reports_hybrid_reranking_against_gold(monkeypatch, tmp_path):
         "relevant": [{"source": "legal/a.pdf", "page": 3}],
     }]))
 
+    monkeypatch.setattr(pipeline, "check_manifest", evaluation.check_manifest)
     report = evaluation.evaluate(
         gold_path=gold_path,
         ks=(1,),
@@ -126,11 +127,11 @@ def test_evaluate_reports_hybrid_reranking_against_gold(monkeypatch, tmp_path):
 
     hybrid = next(row for row in report["average_metrics"] if row["method"] == "hybrid")
     reranked = next(
-        row for row in report["average_metrics"] if row["method"] == "hybrid_reranked"
+        row for row in report["average_metrics"] if row["method"] == "hybrid_llm"
     )
     assert hybrid["recall"] == 0
     assert reranked["recall"] == 1
-    assert report["reranker_model"] == os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b")
+    assert next(row for row in report["per_query"] if row["method"] == "hybrid_llm")["identity"]["model"] == os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b")
 
 
 def test_gold_rejects_empty_and_bad_page(tmp_path):

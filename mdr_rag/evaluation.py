@@ -1,23 +1,19 @@
-"""Human-gold-label benchmark for dense, BM25, hybrid RRF, and optional reranking."""
+"""Gold validation and metric helpers over production evaluation experiments."""
 import json
 import math
-import os
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
-import plotly.express as px
-from rank_bm25 import BM25Okapi
 
-from .core import REPORTS, ROOT
+from .core import ROOT
 from .pipeline import check_manifest
-from .search import _tokens, collection, embeddings, rerank_passages, reranking_enabled
-from .reranking import backend_selection, capture_scores, reranker_identity
 
 
 def load_gold(path):
     path = Path(path)
     examples = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(examples, dict):
+        examples = examples.get("cases")
     if not isinstance(examples, list) or not examples:
         raise ValueError(f"Gold set {path} is empty. Annotate real queries and source pages first.")
     ids = set()
@@ -29,12 +25,21 @@ def load_gold(path):
         if not isinstance(ex.get("id"), str) or not ex["id"].strip() or ex["id"] in ids:
             raise ValueError("Gold IDs must be unique nonblank strings")
         ids.add(ex["id"])
-        if not isinstance(ex.get("relevant"), list) or not ex["relevant"]:
+        answerable = ex.get("answerable", True)
+        if type(answerable) is not bool:
+            raise ValueError(f"{ex['id']}: answerable must be an explicit JSON boolean")
+        if not isinstance(ex.get("relevant"), list):
+            raise ValueError(f"{ex['id']}: relevant must be an explicit list")
+        if not answerable and ex["relevant"]:
+            raise ValueError(f"{ex['id']}: unanswerable cases must have relevant=[]")
+        if answerable and not ex["relevant"]:
             raise ValueError(f"{ex['id']}: at least one human-verified relevant source/page required")
         signatures = set()
         for label in ex["relevant"]:
             if not isinstance(label, dict) or not isinstance(label.get("source"), str):
                 raise ValueError(f"{ex['id']}: a relevant label needs 'source'")
+            if not label["source"].startswith(ex["kind"] + "/"):
+                raise ValueError(f"{ex['id']}: label corpus differs from question kind")
             if label.get("page") is not None and (type(label["page"]) is not int or label["page"] < 1):
                 raise ValueError(f"{ex['id']}: page must be positive integer or null (whole document)")
             if label.get("chunk_id") is not None and not isinstance(label["chunk_id"], str):
@@ -65,15 +70,17 @@ def rank_scores(ranked_ids, meta_by_id, labels, k):
         if label_idx is not None and label_idx not in seen:
             seen.add(label_idx)
             relevant_positions.append(rank)
+    if type(k) is not int or k < 1:
+        raise ValueError("k must be a positive integer")
     total_gold = len(labels)
     dcg = sum(1 / math.log2(pos + 1) for pos in relevant_positions)
     ideal_dcg = sum(1 / math.log2(i + 1) for i in range(1, min(total_gold, k) + 1))
     return {
         "precision": len(seen) / k,
-        "recall": len(seen) / total_gold,
-        "hit_rate": 1.0 if seen else 0.0,
-        "mrr": 1 / min(relevant_positions) if relevant_positions else 0.0,
-        "ndcg": dcg / ideal_dcg if ideal_dcg else 0.0,
+        "recall": len(seen) / total_gold if total_gold else None,
+        "hit_rate": (1.0 if seen else 0.0) if total_gold else None,
+        "mrr": (1 / min(relevant_positions) if relevant_positions else 0.0) if total_gold else None,
+        "ndcg": (dcg / ideal_dcg if ideal_dcg else 0.0) if total_gold else None,
         "found_labels": sorted(seen),
         "unfound_labels": [i for i in range(total_gold) if i not in seen],
     }
@@ -91,140 +98,12 @@ def fusion(semantic_ids, bm25_ids, scores_by_id, take, rrf_k=60):
     return sorted(combined, key=lambda key: combined[key], reverse=True)
 
 
-def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=None):
-    manifest = check_manifest()
-    file_path = Path(gold_path) if gold_path else ROOT / "eval" / "gold_queries.json"
-    examples = load_gold(file_path)
-    ks = sorted(set(int(k) for k in ks))
-    if not ks or min(ks) < 1:
-        raise ValueError("K values must be positive integers")
-    top_k = max(ks)
-    if include_reranked is None:
-        include_reranked = reranking_enabled()
-    backend = backend_selection() if include_reranked else "none"
-    if include_reranked and backend == "none":
-        backend = "llm"  # Explicit legacy include_reranked=True.
-    identity = reranker_identity(backend)
-    db = collection()
-    corpora = {}
-    for kind in ("legal", "device"):
-        data = db.get(where={"kind": kind}, include=["documents", "metadatas"])
-        ids = data["ids"]
-        docs = data["documents"] or []
-        metadatas = data["metadatas"] or []
-        corpora[kind] = {
-            "ids": ids, "docs": docs, "metadata": metadatas,
-            "metadata_by_id": dict(zip(ids, metadatas)),
-            "bm25": BM25Okapi([_tokens(doc) for doc in docs]) if docs else None,
-        }
-    results = []
-    for n, ex in enumerate(examples, 1):
-        kind = ex["kind"]
-        corpus = corpora[kind]
-        ids = corpus["ids"]
-        if not ids:
-            raise ValueError(f"{ex['id']}: no indexed chunks of kind {kind!r}")
-        indexed_locations = {(m["source"], m.get("page")) for m in corpus["metadata"]}
-        indexed_sources = {m["source"] for m in corpus["metadata"]}
-        # Invalid gold must STOP the benchmark; otherwise recall could be deceptive.
-        for gold in ex["relevant"]:
-            found = ((gold["source"], gold.get("page")) in indexed_locations
-                     if gold.get("page") is not None else gold["source"] in indexed_sources)
-            if found and gold.get("chunk_id") is not None:
-                found = (gold["chunk_id"] in corpus["metadata_by_id"] and
-                         corpus["metadata_by_id"][gold["chunk_id"]]["source"] == gold["source"] and
-                         (gold.get("page") is None or
-                          corpus["metadata_by_id"][gold["chunk_id"]].get("page") == gold["page"]))
-            if not found:
-                raise ValueError(f"{ex['id']}: ground-truth label not in index: {gold}")
-        query_vector = embeddings([ex["query"]])[0]
-        dense = db.query(query_embeddings=[query_vector], where={"kind": kind},
-                         n_results=min(len(ids), max(top_k * 3, 12)), include=["distances"])["ids"][0]
-        scores = corpus["bm25"].get_scores(_tokens(ex["query"]))
-        lexical_order = sorted(range(len(ids)), key=lambda i: (-float(scores[i]), ids[i]))
-        bm25 = [ids[i] for i in lexical_order]
-        scores_by_id = {ids[i]: float(scores[i]) for i in range(len(ids))}
-        hybrid = fusion(dense, bm25, scores_by_id, top_k)
-        methods = [("dense", dense), ("bm25", bm25), ("hybrid", hybrid)]
-        if include_reranked:
-            candidate_count = min(30, max(top_k * 3, 12), len(hybrid))
-            candidates = [
-                {
-                    "id": chunk_id,
-                    "text": corpus["docs"][ids.index(chunk_id)],
-                    "meta": corpus["metadata_by_id"][chunk_id],
-                }
-                for chunk_id in hybrid[:candidate_count]
-            ]
-            with capture_scores(backend) as scores:
-                reranked = rerank_passages(ex["query"], candidates)
-            rerank_diagnostics = scores[-1] if scores else None
-            methods.append(("hybrid_reranked", [passage["id"] for passage in reranked]))
-        for method, ordered in methods:
-            for k in ks:
-                result = rank_scores(ordered, corpus["metadata_by_id"], ex["relevant"], k)
-                matched = [ex["relevant"][i] for i in result.pop("found_labels")]
-                missed = [ex["relevant"][i] for i in result.pop("unfound_labels")]
-                results.append({
-                    "query_id": ex["id"], "question": ex["query"], "kind": kind,
-                    "method": method, "k": k, **result,
-                    "reranker": rerank_diagnostics if method == "hybrid_reranked" else None,
-                    "found_labels": matched, "missed_labels": missed,
-                    "retrieved": [
-                        {"id": chunk, "source": corpus["metadata_by_id"][chunk]["source"],
-                         "page": corpus["metadata_by_id"][chunk].get("page")}
-                        for chunk in ordered[:k]
-                    ],
-                })
-        print(f"Evaluated {n}/{len(examples)} questions", flush=True)
-    methods = ["dense", "bm25", "hybrid"]
-    if include_reranked:
-        methods.append("hybrid_reranked")
-    keys = ("precision", "recall", "hit_rate", "mrr", "ndcg")
-    aggregate = []
-    for method in methods:
-        for k in ks:
-            sub = [r for r in results if r["method"] == method and r["k"] == k]
-            aggregate.append({"method": method, "k": k, "questions": len(sub),
-                              **{m: round(sum(row[m] for row in sub) / len(sub), 5) for m in keys}})
-    report = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "gold_file": str(file_path),
-        "n_questions": len(examples),
-        "n_legal_questions": sum(ex["kind"] == "legal" for ex in examples),
-        "n_device_questions": sum(ex["kind"] == "device" for ex in examples),
-        "embedding_model": manifest["embedding_model"],
-        "reranker_model": identity.get("model"),
-        "reranker_backend": backend, "reranker_identity": identity,
-        "reranker_candidate_count": min(30, max(top_k * 3, 12)) if include_reranked else None,
-        "indexed_sources_sha256": {item["source"]: item["sha256"] for item in manifest["files"]},
-        "k_values": ks,
-        "average_metrics": aggregate,
-        "per_query": results,
-        "interpretation": "Ground-truth retrieval benchmark only. Does not measure answer faithfulness, legal completeness, safety, or compliance. Gold labels need human validation.",
-    }
-    path = Path(destination) if destination else REPORTS / "retrieval_evaluation.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    chart_data = []
-    for row in aggregate:
-        for metric in keys:
-            chart_data.append({"retriever": row["method"], "k": row["k"],
-                               "metric": metric.upper(), "score": row[metric]})
-    fig = px.line(chart_data, x="k", y="score", color="retriever", facet_col="metric",
-                  facet_col_wrap=3, markers=True, title="Retrieval benchmark: human-labeled questions",
-                  category_orders={"metric": [m.upper() for m in keys]})
-    fig.update_yaxes(range=[0, 1], matches=None)
-    fig.update_layout(height=760)
-    html_path = path.with_suffix(".html")
-    fig.write_html(html_path, include_plotlyjs=True)
-    print(f"Evaluation data: {path}\nEvaluation charts: {html_path}")
-    for row in aggregate:
-        if row["k"] == max(ks):
-            print(f"  {row['method']:>6} k={row['k']}: Recall={row['recall']:.3f}, "
-                  f"MRR={row['mrr']:.3f}, nDCG={row['ndcg']:.3f}")
-    return report
+def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=None,
+             *, methods=None, compare_all=False, run_id=None):
+    """Compatibility entry point; all experiments use production candidates."""
+    from .experiments import evaluate_production
+    return evaluate_production(gold_path, ks, destination, include_reranked,
+                               methods=methods, compare_all=compare_all, run_id=run_id)
 
 
 def inspect_candidates(question, kind="legal", k=8):

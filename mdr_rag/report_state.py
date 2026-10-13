@@ -156,6 +156,7 @@ class StageEvent(StateModel):
     requirement_id: str
     stage: str
     outcome: str
+    elapsed_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class ReportState(StateModel):

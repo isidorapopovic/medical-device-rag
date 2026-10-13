@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "dataset_type": "unverified",
+  "human_validated": false,
+  "reviewer": "REPLACE_WITH_HUMAN_REVIEWER_AFTER_LABELING",
+  "legal_version_label": "REPLACE_WITH_ACTUAL_UPLOADED_VERSION_LABEL",
+  "sources_sha256": {},
+  "cases": [
+    {
+      "id": "POSITIVE_PLACEHOLDER",
+      "query": "REPLACE_WITH_A_HUMAN_LABELED_QUESTION",
+      "kind": "device",
+      "requirement_id": "REPLACE_WITH_AN_EXISTING_REGISTER_ID",
+      "split": "held_out",
+      "answerable": true,
+      "relevant": [{"source": "device/REPLACE_WITH_ACTUAL_FILENAME", "page": null, "chunk_id": "REPLACE_WITH_VERIFIED_CHUNK_ID"}],
+      "passage_labels": [],
+      "tags": ["qualification", "exception"]
+    },
+    {
+      "id": "NEGATIVE_PLACEHOLDER",
+      "query": "REPLACE_WITH_A_DIFFERENT_HUMAN_VERIFIED_UNANSWERABLE_QUESTION",
+      "kind": "device",
+      "requirement_id": "REPLACE_WITH_ANOTHER_EXISTING_REGISTER_ID",
+      "split": "held_out",
+      "answerable": false,
+      "relevant": [],
+      "passage_labels": [],
+      "tags": ["unanswerable", "historical_version"]
+    }
+  ]
+}

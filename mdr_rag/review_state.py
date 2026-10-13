@@ -2,9 +2,10 @@
 import json
 import inspect
 import os
+import time
 from uuid import uuid4
 
-from .config import ollama_num_ctx
+from .config import ollama_num_ctx, ollama_gpu_layers
 from .report_state import (
     CHECKPOINTS, Dependencies, ReportState, RequirementRecord, RequirementSection,
     RetrievedPassage, StageEvent, StateStore, export_report, fingerprint,
@@ -116,7 +117,7 @@ def configuration(k: int) -> dict:
             "reranker_prompt_hash": fingerprint(inspect.getsource(search._llm_rerank)), "multi_query_enabled": enabled == "true", "query_planner": planner,
             "planner_hash": fingerprint([PLANNER_RULES, inspect.getsource(plan_queries)]), "k": k, "retrieval_mode": mode, "rerank_enabled": reranking_enabled(),
             "llm_model": model, "embedding_model": embedding,
-            "num_ctx": ollama_num_ctx(), "reranker_backend": backend, "reranker_identity": identity,
+            "num_ctx": ollama_num_ctx(), "ollama_gpu_layers": ollama_gpu_layers(), "reranker_backend": backend, "reranker_identity": identity,
             "cross_encoder_cache": str(cache_folder()), "extraction_version": EXTRACTION_VERSION,
             "query_version": QUERY_VERSION, "retrieval_version": RETRIEVAL_VERSION,
             "review_prompt_hash": fingerprint([REVIEW_RULES, REVIEW_INPUT, StructuredFinding.model_json_schema()]),
@@ -138,17 +139,17 @@ def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, con
         profile=fingerprint(profile), requirement=fingerprint(requirement.model_dump()),
         corpus=corpus, query=fingerprint({key: config[key] for key in
             ("query_version", "multi_query_enabled", "multi_query_max", "query_planner", "planner_hash")}
-            | ({"model": config["llm_model"], "num_ctx": config["num_ctx"]}
+            | ({"model": config["llm_model"], "num_ctx": config["num_ctx"], "gpu_layers": config.get("ollama_gpu_layers")}
                if config["query_planner"] == "llm" else {})),
         retrieval=fingerprint({key: config[key] for key in (
             "k", "retrieval_mode", "embedding_model", "reranker_backend", "retrieval_version",
-            "retrieval_per_query", "retrieval_max_candidates", "reranker_identity", "retrieval_pool_policy")}
+            "retrieval_per_query", "retrieval_max_candidates", "reranker_identity", "retrieval_pool_policy")} | ({"gpu_layers": config["ollama_gpu_layers"]} if config.get("ollama_gpu_layers") is not None else {})
             | ({"reranker_model": config["llm_model"], "num_ctx": config["num_ctx"],
                 "reranker_prompt": fingerprint(inspect.getsource(search._llm_rerank))}
                if config["reranker_backend"] == "llm" else {})),
         gate=fingerprint({key: config[key] for key in ("gate_mode", "gate_threshold", "calibration")}
                          | {"gate_implementation": fingerprint([inspect.getsource(screen), inspect.getsource(gate_context), inspect.getsource(obligation_inventory)])}),
-        review=fingerprint({"model": config["llm_model"], "num_ctx": config["num_ctx"],
+        review=fingerprint({"model": config["llm_model"], "num_ctx": config["num_ctx"], "gpu_layers": config.get("ollama_gpu_layers"),
                             "prompt": config["review_prompt_hash"]}),
         validation=fingerprint(config["validation_version"]),
     )
@@ -355,9 +356,11 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
     state.source_buffer = buffer.snapshots
 
 
-def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False, config_overrides=None, use_env_config=False):
+def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False, config_overrides=None, use_env_config=False, evaluation_requirement_id=None):
     from . import pipeline as app
 
+    if evaluation_requirement_id and (limit is not None or requirement_id or resume or refresh):
+        raise ValueError("Evaluation target requires a fresh assessment without resume/refresh/limit")
     if limit is not None and limit < 1:
         raise ValueError("--limit must be positive")
     if k is not None and k < 1:
@@ -383,8 +386,9 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
         state = store.load() if exists else None
         # No extraction on resume: consume the existing register and validate its anchors.
         draft = app.load_json(app.STATE / "requirements_draft.json")
-        if requirement_id and requirement_id not in {req["id"] for req in draft["requirements"]}:
-            raise ValueError(f"Unknown requirement ID: {requirement_id}")
+        selected_id = requirement_id or evaluation_requirement_id
+        if selected_id and selected_id not in {req["id"] for req in draft["requirements"]}:
+            raise ValueError(f"Unknown requirement ID: {selected_id}")
         config = resolve(state.config if state else None, k if k is not None else (state.config.get("k", 7) if state else 7), config_overrides, use_env_config, configuration)
         with scoped_environment(environment(config)):
             try:
@@ -423,7 +427,7 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
                 section.stale_reasons = ["explicit_refresh"]
                 section.updated_at = timestamp()
             state = store.save(state, state.revision)
-            keys = [requirement_id] if requirement_id else list(state.sections)[:limit]
+            keys = [selected_id] if selected_id else list(state.sections)[:limit]
             for key in keys:
                 section = state.sections[key]
                 if section.execution_status == "completed":
@@ -441,6 +445,7 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
                         # revision guard while the operation is still in progress.
                         state.revision, state.updated_at = committed.revision, committed.updated_at
                         state.summarize()
+                    started = time.perf_counter()
                     try:
                         orchestrator.stage(stage, section, config, profile, app, state, persist_trace, perform_stage)
                     except Exception as exc:
@@ -448,20 +453,21 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
                         # Do not persist exceptions that may contain source excerpts.
                         section.failure_reason = f"{type(exc).__name__} during {stage}"
                         section.updated_at = timestamp()
-                        state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="failed"))
+                        state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="failed", elapsed_seconds=time.perf_counter() - started))
                         state = store.save(state, state.revision)
                         orchestrator.report_writer.write(state, store.directory)
                         raise
                     section.checkpoint = stage
                     section.updated_at = timestamp()
-                    state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="completed"))
+                    state.events.append(StageEvent(requirement_id=key, stage=stage, outcome="completed", elapsed_seconds=time.perf_counter() - started))
                     # Persistence/export errors are not stage failures: canonical state
                     # determines whether the next invocation repeats this operation.
                     state = store.save(state, state.revision)
                     section = state.sections[key]
                     orchestrator.report_writer.write(state, store.directory)
             orchestrator.report_writer.write(state, store.directory)
-            orchestrator.report_writer.write(state, app.REPORTS)
+            if evaluation_requirement_id is None:
+                orchestrator.report_writer.write(state, app.REPORTS)
     print(f"Assessment {assessment_id}: saved {store.path}; compatibility exports in {store.directory} and {app.REPORTS}")
     return state
 

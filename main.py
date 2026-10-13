@@ -63,6 +63,11 @@ def main():
     evaluate.add_argument("--gold", default=None)
     evaluate.add_argument("--ks", type=int, nargs="+", default=[3, 5, 10])
     evaluate.add_argument("--out", default=None)
+    evaluate.add_argument("--compare-all", action="store_true", help="Compare production single/multi-query, cross-encoder and complete review paths")
+    evaluate.add_argument("--methods", nargs="+", help="Explicit production method names; complete review methods require held-out register IDs")
+    evaluate.add_argument("--run-id", help="Distinct evaluation run ID")
+    evaluate.add_argument("--saved-evaluation", help="Frozen evaluation JSON for offline human grounding adjudication")
+    evaluate.add_argument("--grounding-labels", help="Human claim adjudications bound to frozen assessment revisions")
     evaluate.add_argument("--gate-labels", help="Evaluate reviewed scored runs on held-out answerable/unanswerable cases")
     evaluate.add_argument("--gate-calibration", help="Frozen calibration artifact for --gate-labels")
     calibrate = subs.add_parser("calibrate-gate", help="Tune a passage relevance threshold from reviewed saved runs")
@@ -121,6 +126,12 @@ def main():
             from mdr_rag.gate_evaluation import calibrate_labels
             calibrate_labels(args.labels, args.out)
         elif args.command == "evaluate":
+            if args.saved_evaluation or args.grounding_labels:
+                if not (args.saved_evaluation and args.grounding_labels and args.out):
+                    raise ValueError("Offline grounding requires --saved-evaluation, --grounding-labels and --out")
+                from mdr_rag.grounding_evaluation import adjudicate
+                adjudicate(args.saved_evaluation, args.grounding_labels, args.out)
+                return 0
             if args.gate_labels:
                 if not args.gate_calibration or not args.out:
                     raise ValueError("--gate-labels requires --gate-calibration and --out")
@@ -134,12 +145,12 @@ def main():
             from mdr_rag.source_buffer import EvidenceRun, recording
             evidence_run = EvidenceRun(STATE, "evaluate")
             with recording(evidence_run.recorder):
-                evaluate(args.gold, args.ks, args.out)
+                evaluate(args.gold, args.ks, args.out, methods=args.methods, compare_all=args.compare_all, run_id=args.run_id)
             evidence_run.save()
         elif args.command == "graph":
             from mdr_rag.graph_viz import graph_from_assessment
             graph_from_assessment(args.assessment, args.out, args.max_requirements)
-    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+    except (ValueError, RuntimeError, FileNotFoundError, FileExistsError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return 0

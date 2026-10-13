@@ -121,9 +121,9 @@ def reranker_identity(backend):
     if backend == "none":
         return {"backend": "none"}
     if backend == "llm":
-        from .config import ollama_num_ctx
+        from .config import ollama_num_ctx, ollama_gpu_layers
         return {"backend": "llm", "model": os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b"),
-                "num_ctx": ollama_num_ctx(), "score_transformation": "llm_relevance_0_100",
+                "num_ctx": ollama_num_ctx(), "requested_gpu_layers": ollama_gpu_layers(), "score_transformation": "llm_relevance_0_100",
                 "token_visibility": "unverified", "preprocessing": "full-candidate-text-v1"}
     settings = cross_encoder_settings()
     libraries = library_versions()

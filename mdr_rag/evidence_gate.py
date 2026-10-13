@@ -32,6 +32,8 @@ def gate_context(config, corpus, profile):
             "retrieval_version", "query_version", "multi_query_enabled", "multi_query_max", "query_planner",
             "planner_hash", "rerank_query_version", "retrieval_pool_policy")
     retrieval = {key: config[key] for key in keys}
+    if config.get("ollama_gpu_layers") is not None:
+        retrieval["ollama_gpu_layers"] = config["ollama_gpu_layers"]
     if config["query_planner"] == "llm":
         retrieval.update(planner_model=config["llm_model"], planner_num_ctx=config["num_ctx"])
     if config["reranker_backend"] == "llm":

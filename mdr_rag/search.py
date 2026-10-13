@@ -6,7 +6,7 @@ import chromadb
 from rank_bm25 import BM25Okapi
 
 from .core import DBDIR, ROOT, all_records
-from .config import ollama_num_ctx
+from .config import ollama_num_ctx, ollama_device_options
 from .schemas import RerankBatch
 from .source_buffer import ACTIVE_RECORDER
 
@@ -24,7 +24,7 @@ def embeddings(texts: list[str]) -> list[list[float]]:
     model = os.getenv("EMBEDDING_MODEL", "embeddinggemma")
     # Ollama generates embeddings locally, no external embedding API calls.
     import ollama
-    result = ollama.embed(model=model, input=texts)
+    result = ollama.embed(model=model, input=texts, **({"options": ollama_device_options()} if ollama_device_options() else {}))
     return [list(v) for v in result["embeddings"]]
 
 
@@ -98,7 +98,7 @@ def _llm_rerank(query: str, passages: list[dict]) -> dict:
             model=os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b"),
             messages=messages,
             format=RerankBatch.model_json_schema(),
-            options={"temperature": 0, "num_ctx": ollama_num_ctx()},
+            options={"temperature": 0, "num_ctx": ollama_num_ctx(), **ollama_device_options()},
             think=False,
         )
         try:
