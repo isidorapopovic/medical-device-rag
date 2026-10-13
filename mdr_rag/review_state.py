@@ -12,6 +12,7 @@ from .report_state import (
     decode_state,
 )
 from .schemas import Finding
+from .query_planner import plan_queries, PLANNER_RULES, PlannerPersistenceError, PlannerSelection
 from .search import reranking_enabled
 from . import search
 from .review_evidence import prepare_legal_anchor, validate_finding
@@ -46,8 +47,8 @@ LIMITATIONS = [
     "Applicability, device classification and all final conclusions require specialist validation.",
     "Stage 2 verifies raw-span provenance and model-context membership, not semantic entailment or full claim coverage.",
 ]
-QUERY_VERSION = "single-requirement-query-with-source-anchor-v2"
-RETRIEVAL_VERSION = "single-query-rrf-v1"
+QUERY_VERSION = "bounded-source-constrained-intents-v3"
+RETRIEVAL_VERSION = "two-level-rrf-v3"
 VALIDATION_VERSION = "finding-raw-span-provenance-v2"
 EXTRACTION_VERSION = "character-2000-overlap250-v1"
 REVIEW_INPUT = (
@@ -67,7 +68,26 @@ def configuration(k: int) -> dict:
     embedding = os.getenv("EMBEDDING_MODEL", "embeddinggemma")
     if not model.strip() or not embedding.strip():
         raise ValueError("Local model names must not be empty")
-    return {"k": k, "retrieval_mode": mode, "rerank_enabled": reranking_enabled(),
+    enabled = os.getenv("MULTI_QUERY_ENABLED", "true").lower()
+    if enabled not in {"true", "false"}:
+        raise ValueError("MULTI_QUERY_ENABLED must be true or false")
+    planner = os.getenv("QUERY_PLANNER", "deterministic").lower()
+    if planner not in {"deterministic", "llm"}:
+        raise ValueError("QUERY_PLANNER must be deterministic or llm")
+    budgets = {}
+    for name, default, cap in (("MULTI_QUERY_MAX", 4, 4), ("RETRIEVAL_PER_QUERY", 12, 12),
+                               ("RETRIEVAL_MAX_CANDIDATES", 30, 30)):
+        try:
+            value = int(os.getenv(name, str(default)))
+        except ValueError as exc:
+            raise ValueError(f"{name} must be an integer between 1 and {cap}") from exc
+        if not 1 <= value <= cap:
+            raise ValueError(f"{name} must be between 1 and {cap}")
+        budgets[name.lower()] = value
+    if not 1 <= k <= 30:
+        raise ValueError("k must be between 1 and 30")
+    return {**budgets, "multi_query_enabled": enabled == "true", "query_planner": planner,
+            "planner_hash": fingerprint([PLANNER_RULES, inspect.getsource(plan_queries)]), "k": k, "retrieval_mode": mode, "rerank_enabled": reranking_enabled(),
             "llm_model": model, "embedding_model": embedding,
             "num_ctx": ollama_num_ctx(), "reranker_backend": "llm" if reranking_enabled() else "none",
             "calibration": "not_implemented", "extraction_version": EXTRACTION_VERSION,
@@ -86,9 +106,13 @@ def corpus_hash(manifest: dict) -> str:
 def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, config: dict) -> Dependencies:
     return Dependencies(
         profile=fingerprint(profile), requirement=fingerprint(requirement.model_dump()),
-        corpus=corpus, query=fingerprint(config["query_version"]),
+        corpus=corpus, query=fingerprint({key: config[key] for key in
+            ("query_version", "multi_query_enabled", "multi_query_max", "query_planner", "planner_hash")}
+            | ({"model": config["llm_model"], "num_ctx": config["num_ctx"]}
+               if config["query_planner"] == "llm" else {})),
         retrieval=fingerprint({key: config[key] for key in (
-            "k", "retrieval_mode", "embedding_model", "reranker_backend", "calibration", "retrieval_version")}
+            "k", "retrieval_mode", "embedding_model", "reranker_backend", "calibration", "retrieval_version",
+            "retrieval_per_query", "retrieval_max_candidates")}
             | ({"reranker_model": config["llm_model"], "num_ctx": config["num_ctx"],
                 "reranker_prompt": fingerprint(inspect.getsource(search.rerank_passages))}
                if config["rerank_enabled"] else {})),
@@ -165,14 +189,43 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
         section.applicability_reason = "Device profile is unverified; independent applicability review is not implemented."
     elif stage == "queries":
         prepare_legal_anchor(section, buffer, app)
-        section.queries = [f"{req.provision} {req.requirement} {req.exact_quote}"]
+        def planner_llm(rules, prompt, schema):
+            def persist_planner():
+                state.source_buffer = buffer.snapshots
+                try:
+                    persist_trace()
+                except Exception as exc:
+                    raise PlannerPersistenceError("Query planner checkpoint could not be saved; resolve the storage error and resume") from exc
+            recorder.persist = persist_planner
+            trace = recorder.start("query_planner", config["llm_model"], rules, prompt, [])
+            try:
+                result = PlannerSelection.model_validate(app.llm_parse(rules, prompt, schema))
+                if any(key not in {"Q2", "Q3", "Q4"} for key in result.selected_ids):
+                    raise ValueError("Unknown planner intent")
+            except Exception:
+                recorder.finish(trace, "failed")
+                raise
+            recorder.finish(trace)
+            return result
+        plan = plan_queries(req, profile, maximum=config["multi_query_max"] if config["multi_query_enabled"] else 1,
+                            llm=planner_llm if config["query_planner"] == "llm" else None)
+        section.query_plan = plan.model_dump()
+        section.queries = [query.text for query in plan.queries]
     elif stage == "retrieval":
         def persist_retrieval_trace():
             state.source_buffer = buffer.snapshots
             persist_trace()
         recorder.persist = persist_retrieval_trace
         with recording(recorder):
-            found = app.hybrid_search(section.queries[0], "device", k=config["k"])
+            if config["multi_query_enabled"]:
+                result = search.retrieve_candidates(section.queries, "device", k=config["k"],
+                    mode=config["retrieval_mode"], rerank=config["rerank_enabled"],
+                    manifest_fingerprint=state.corpus_fingerprint,
+                    per_backend=config["retrieval_per_query"], merged_limit=config["retrieval_max_candidates"])
+                found = result["passages"]
+                section.retrieval_trace = result["trace"]
+            else:
+                found = app.hybrid_search(section.queries[0], "device", k=config["k"])
         section.passages = [RetrievedPassage.model_validate(p) for p in found]
         recorder.record_retrieved(found)
         section.retrieved_buffer_ids = recorder.retrieved
@@ -215,6 +268,7 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
             "finding": finding.model_dump(), "dependencies": section.dependencies.model_dump(),
             "retrieved_evidence": [{"id": p.id, **p.meta, "excerpt": p.text}
                                    for p in section.passages],
+            "query_plan": section.query_plan, "retrieval_trace": section.retrieval_trace,
             "retrieved_buffer_ids": section.retrieved_buffer_ids,
             "draft_call_id": section.draft_call_id,
             "legal_anchor": section.legal_anchor.model_dump() if section.legal_anchor else None,
@@ -281,6 +335,7 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
             section = state.sections[requirement_id]
             section.checkpoint = "pending"
             section.queries, section.passages, section.draft_finding = [], [], None
+            section.query_plan, section.retrieval_trace = None, None
             section.retrieved_buffer_ids, section.claim_links = [], []
             section.draft_call_id = None
             section.execution_status = "stale"

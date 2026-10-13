@@ -138,56 +138,98 @@ def hybrid_search(
     mode: str | None = None,
     rerank: bool | None = None,
 ) -> list[dict]:
-    """Retrieve dense, BM25, or hybrid candidates and optionally rerank them locally."""
+    """Compatibility single-query interface over the shared candidate API."""
+    return retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank)["passages"]
+
+
+_BM25_CACHE = {}
+
+
+def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
+                        manifest_fingerprint=None, per_backend=12, merged_limit=30):
+    """Two-level reciprocal rank fusion with bounded work and query provenance.
+
+    Raw backend scores are diagnostic only. Cache keys include the immutable
+    manifest fingerprint and corpus kind; no index writes occur here.
+    """
+    from .query_planner import canonical
     mode = (mode or os.getenv("RETRIEVAL_MODE", "hybrid")).lower()
     if mode not in {"dense", "bm25", "hybrid"}:
         raise ValueError("RETRIEVAL_MODE must be dense, bm25, or hybrid")
-    if k < 1:
-        raise ValueError("k must be positive")
+    if kind not in {"legal", "device"}:
+        raise ValueError("kind must be legal or device")
+    if not 1 <= per_backend <= 12 or not 1 <= merged_limit <= 30 or not 1 <= k <= 30:
+        raise ValueError("Retrieval budgets: per backend 1..12, merged/k 1..30")
+    unique, seen = [], set()
+    for query in queries:
+        key = canonical(query)
+        if key and key not in seen:
+            unique.append(query)
+            seen.add(key)
+    if not 1 <= len(unique) <= 4:
+        raise ValueError("Supply one to four distinct nonempty queries")
     rerank = reranking_enabled() if rerank is None else rerank
     c = collection()
-    everything = c.get(where={"kind": kind}, include=["documents", "metadatas"])
-    ids = everything["ids"]
-    if not ids:
-        return []
-    candidate_count = min(max(k * 3, 12), len(ids))
-    combined = {}
-    if mode in {"dense", "hybrid"}:
-        vector = embeddings([query])[0]
-        semantic = c.query(
-            query_embeddings=[vector], n_results=candidate_count,
-            where={"kind": kind}, include=["metadatas", "documents", "distances"],
-        )
-        for rank, idx in enumerate(semantic["ids"][0]):
-            combined[idx] = combined.get(idx, 0) + 1 / (60 + rank + 1)
-    if mode in {"bm25", "hybrid"}:
-        corpus = [_tokens(doc) for doc in everything["documents"]]
-        bm25 = BM25Okapi(corpus)
-        lexical_scores = bm25.get_scores(_tokens(query))
-        lexical_order = sorted(range(len(ids)), key=lambda i: (-lexical_scores[i], ids[i]))
-        for rank, pos in enumerate(lexical_order[:candidate_count]):
-            if lexical_scores[pos] <= 0:
+    cache_key = (str(DBDIR.resolve()), COLLECTION, kind, manifest_fingerprint)
+    cached = _BM25_CACHE.get(cache_key) if manifest_fingerprint else None
+    if cached is None:
+        everything = c.get(where={"kind": kind}, include=["documents", "metadatas"])
+        records = {}
+        for idx, doc, meta in zip(everything["ids"], everything["documents"], everything["metadatas"]):
+            if meta.get("kind") != kind or not meta.get("source", "").replace("\\", "/").startswith(kind + "/"):
                 continue
-            id_ = ids[pos]
-            combined[id_] = combined.get(id_, 0) + 1 / (60 + rank + 1)
-    positions = {id_: i for i, id_ in enumerate(ids)}
+            records[idx] = {"id": idx, "text": doc, "meta": dict(meta)}
+        ids = sorted(records)
+        corpus = [_tokens(records[idx]["text"]) for idx in ids]
+        cached = (records, ids, corpus, None)
+    records, ids, corpus, bm25 = cached
+    if mode in {"bm25", "hybrid"} and ids and any(corpus) and bm25 is None:
+        bm25 = BM25Okapi(corpus)
+        cached = (records, ids, corpus, bm25)
+    if manifest_fingerprint:
+        if cache_key not in _BM25_CACHE and len(_BM25_CACHE) >= 4:
+            _BM25_CACHE.pop(next(iter(_BM25_CACHE)))
+        _BM25_CACHE[cache_key] = cached
+    scores, provenance, query_lists = {}, {}, []
+    for qi, query in enumerate(unique, 1):
+        fused, observations = {}, {}
+        backend_lists = {}
+        if ids and mode in {"dense", "hybrid"}:
+            vector = embeddings([query])[0]
+            result = c.query(query_embeddings=[vector], n_results=min(per_backend, len(ids)),
+                             where={"kind": kind}, include=["metadatas", "documents", "distances"])
+            backend_lists["dense"] = list(dict.fromkeys(idx for idx in result["ids"][0] if idx in records))[:per_backend]
+        if bm25 is not None and mode in {"bm25", "hybrid"}:
+            raw = bm25.get_scores(_tokens(query))
+            order = sorted(range(len(ids)), key=lambda pos: (-raw[pos], ids[pos]))
+            backend_lists["bm25"] = [ids[pos] for pos in order if raw[pos] > 0][:per_backend]
+        for backend, ranked in backend_lists.items():
+            for rank, idx in enumerate(ranked, 1):
+                fused[idx] = fused.get(idx, 0) + 1 / (60 + rank)
+                observations.setdefault(idx, []).append({"query_id": f"Q{qi}", "query": query,
+                                                         "backend": backend, "backend_rank": rank})
+        ordered = sorted(fused, key=lambda idx: (-fused[idx], idx))
+        query_lists.append({"query_id": f"Q{qi}", "query": query, "candidate_ids": ordered})
+        for rank, idx in enumerate(ordered, 1):
+            scores[idx] = scores.get(idx, 0) + 1 / (60 + rank)
+            for item in observations[idx]:
+                item["query_rank"] = rank
+            provenance.setdefault(idx, []).extend(observations[idx])
     recorder = ACTIVE_RECORDER.get()
     if recorder is not None:
-        # Snapshot the union returned by both backends before the fusion cap;
-        # later presentation/citation sets may be much smaller.
-        recorder.record_retrieved([
-            {"id": id_, "text": everything["documents"][positions[id_]],
-             "meta": everything["metadatas"][positions[id_]]} for id_ in sorted(combined)
-        ])
-    winners = sorted(combined, key=lambda i: (-combined[i], i))[:candidate_count]
-    passages = [
-        {"id": id_, "text": everything["documents"][positions[id_]],
-         "meta": everything["metadatas"][positions[id_]]}
-        for id_ in winners
-    ]
+        recorder.record_retrieved([records[idx] for idx in sorted(scores)])
+    winners = sorted(scores, key=lambda idx: (-scores[idx], idx))[:merged_limit]
+    passages = [{"id": idx, "text": records[idx]["text"], "meta": dict(records[idx]["meta"])} for idx in winners]
     if rerank:
-        passages = rerank_passages(query, passages)
-    return passages[:k]
+        passages = rerank_passages(unique[0], passages)
+    passages = passages[:k]
+    from .retrieval_trace import RetrievalTrace
+    return {"passages": passages, "trace": RetrievalTrace.model_validate({
+        "queries": query_lists, "candidates": [dict(id=idx, fusion_score=scores[idx],
+            provenance=provenance[idx]) for idx in sorted(scores, key=lambda idx: (-scores[idx], idx))],
+        "merged_ids": winners, "selected_ids": [p["id"] for p in passages],
+        "mode": mode, "per_backend": per_backend, "merged_limit": merged_limit,
+        "reranked": bool(rerank)}).model_dump()}
 
 
 def legal_chunks(source: str, pages: set[int]) -> list[dict]:

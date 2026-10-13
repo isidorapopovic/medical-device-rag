@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .core import digest
 from .schemas import Finding
+from .query_planner import QueryPlan
+from .retrieval_trace import RetrievalTrace
 from .source_buffer import ClaimEvidenceLink, ModelCallTrace, SourceBuffer, SourcePassage
 
 
@@ -81,6 +83,8 @@ class RequirementSection(StateModel):
     applicability: Literal["applicable", "uncertain", "possibly_not_applicable"] = "uncertain"
     applicability_reason: str = "User profile and applicability have not been independently verified."
     queries: list[str] = Field(default_factory=list)
+    query_plan: dict | None = None
+    retrieval_trace: dict | None = None
     passages: list[RetrievedPassage] = Field(default_factory=list)
     retrieved_buffer_ids: list[str] = Field(default_factory=list)
     legal_anchor: ClaimEvidenceLink | None = None
@@ -101,6 +105,14 @@ class RequirementSection(StateModel):
 
     @model_validator(mode="after")
     def valid_checkpoint(self):
+        if self.query_plan is not None:
+            plan = QueryPlan.model_validate(self.query_plan)
+            if [q.text for q in plan.queries] != self.queries:
+                raise ValueError("Saved query plan does not match section queries")
+        if self.retrieval_trace is not None:
+            trace = RetrievalTrace.model_validate(self.retrieval_trace)
+            if [q.query for q in trace.queries] != self.queries:
+                raise ValueError("Saved retrieval provenance does not match section queries")
         if self.requirement_hash != fingerprint(self.requirement.model_dump()):
             raise ValueError("Requirement hash does not match its saved content")
         if self.checkpoint in {"queries", "retrieval", "draft", "completed"} and not self.queries:
@@ -170,6 +182,10 @@ class ReportState(StateModel):
         for section in self.sections.values():
             for key in section.retrieved_buffer_ids:
                 buffer.get_passage(key)
+            if section.retrieval_trace is not None:
+                known = {buffer.get_passage(key).chunk_id for key in section.retrieved_buffer_ids}
+                if not {c["id"] for c in section.retrieval_trace["candidates"]} <= known:
+                    raise ValueError("Retrieval candidates require saved source snapshots")
             for trace in section.model_calls:
                 for key in trace.retrieved_buffer_ids:
                     buffer.get_passage(key)
@@ -319,8 +335,10 @@ def invalidate(section: RequirementSection, dependencies: Dependencies) -> bool:
     section.checkpoint = CHECKPOINTS[earliest]
     if earliest < 2:
         section.queries = []
+        section.query_plan = None
     if earliest < 3:
         section.passages = []
+        section.retrieval_trace = None
         section.retrieved_buffer_ids = []
     if earliest < 4:
         section.draft_finding = None
@@ -389,6 +407,8 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
             "legal_anchor": anchor,
             "legal_quote_verified": anchor is not None,
             "legal_anchor_issue": published.get("legal_anchor_issue", "legacy_raw_span_unverified" if not anchor else None),
+            "query_plan": published.get("query_plan"),
+            "retrieval_trace": published.get("retrieval_trace"),
             "retrieved_buffer_ids": published.get("retrieved_buffer_ids", []),
             "draft_call_id": published.get("draft_call_id"),
             "claim_links": published.get("claim_links", []),
