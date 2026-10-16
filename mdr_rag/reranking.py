@@ -14,6 +14,8 @@ from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from .runtime import managed_run
+
 MODEL = "BAAI/bge-reranker-base"
 REVISION = "2cfc18c9415c912f9d8155881c133215df768a70"
 PREPROCESSING = "fast-offsets-query-prefix128-only-second-right-truncation-v1"
@@ -263,6 +265,7 @@ def capture_scores(backend=None):
         _SELECTED.reset(selected_token)
 
 
+@managed_run
 def rerank_candidates(query, passages, *, backend=None, scorer=None, identity=None):
     backend = backend_selection(backend)
     if len(passages) > 30:
@@ -302,7 +305,19 @@ def rerank_candidates(query, passages, *, backend=None, scorer=None, identity=No
         recorder.persist()
     begin = time.perf_counter()
     try:
-        scores = scorer.score(prepared, identity["batch_size"])
+        from .runtime import provider_scope
+        with provider_scope() as run:
+            token_count = sum(pair["coverage"]["token_count"] for pair in prepared)
+            prompt_chars = sum(len(query[:pair["coverage"]["query_end"]])
+                               + pair["coverage"]["end"] - pair["coverage"]["start"] for pair in prepared)
+            def score_locally(timeout):
+                # CPU inference is synchronous. Cancellation/deadline checks
+                # occur before and after this bounded pool, never in a worker
+                # thread that could outlive its run and mutate later state.
+                return {"scores": scorer.score(prepared, identity["batch_size"]),
+                        "prompt_eval_count": token_count, "eval_count": 0}
+            scores = run.call("rerank", score_locally, input_tokens=token_count, output_tokens=0,
+                              prompt_chars=prompt_chars, source_counts=len(prepared))["scores"]
         ranked = scored_copies(passages, scores)
         by_id = {s["id"]: s["score"] for s in scores}
         diagnostics["scores"] = [{"id": p["id"], "score": float(by_id[p["id"]]), **p["coverage"]} for p in prepared]

@@ -18,6 +18,18 @@
 /state/
 /reports/
 
+# Local SQLite databases and sidecars, including custom runtime ledger paths
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+# Runtime telemetry (may contain project correlation metadata)
+runtime.jsonl
+
 # Python virtual environments, bytecode and tool caches
 .venv*/
 venv*/
@@ -49,5 +61,9 @@ Thumbs.db
 Desktop.ini
 
 
+# Keep local implementation notes and prompt packs private
 docs/
+
+# Accidental terminal capture; preserve the local file
+/how HEAD
 

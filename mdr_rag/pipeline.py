@@ -7,12 +7,13 @@ from pathlib import Path
 import pymupdf as fitz
 
 from .core import DOCS, REPORTS, STATE, digest, is_real_quote, is_raw_quote, location, norm, parse_pages, validate_ids
-from .config import ollama_num_ctx, ollama_device_options
+from .config import ollama_num_ctx
 from .schemas import Answer, AnswerSupportVerification, Finding, RequirementBatch
 from .search import collection, hybrid_search, legal_chunks, rebuild_index
 from .Q_Mix_report_writer import write_markdown
 from .requirement_identity import assign_identity
 from .source_buffer import EvidenceRun, recording
+from .runtime import managed_run
 
 
 def now() -> str:
@@ -29,22 +30,10 @@ def load_json(path: Path) -> dict:
 
 
 def llm_parse(instructions: str, input_text: str, model_type):
-    model = os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b")
-    import ollama
-    response = ollama.chat(
-        model=model,
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": input_text},
-        ],
-        format=model_type.model_json_schema(),
-        options={"temperature": 0, "num_ctx": ollama_num_ctx(), **ollama_device_options()},
-        think=False,
-    )
-    try:
-        return model_type.model_validate_json(response["message"]["content"])
-    except Exception as exc:
-        raise RuntimeError(f"Local LLM returned invalid structured JSON: {exc}") from exc
+    # Keep the established configuration error contract before any run/IO.
+    ollama_num_ctx()
+    from .providers import OllamaProvider
+    return OllamaProvider().generate(instructions, input_text, model_type)
 
 
 def inspect_files(search_term: str | None = None):
@@ -71,6 +60,7 @@ def inspect_files(search_term: str | None = None):
                 pdf.close()
 
 
+@managed_run
 def run_index():
     warnings, manifest = rebuild_index()
     audit = {
@@ -118,6 +108,7 @@ def choose_legal_source(filename: str | None) -> str:
     return files[0]
 
 
+@managed_run
 def extract_requirements(pages_spec: str, filename: str | None):
     """Compatibility facade for the typed Requirement Analyst."""
     import sys
@@ -167,12 +158,14 @@ def check_regulation_alignment(draft: dict):
         raise RuntimeError("Legal source chunks changed. Re-extract draft requirements.")
 
 
+@managed_run
 def run_review(limit: int | None = None, k: int | None = None, **options):
     """Compatibility facade for the durable review workflow."""
     from .review_state import run_review as persistent_review
     return persistent_review(limit, k, **options)
 
 
+@managed_run
 def run_ask(question: str, k: int = 5):
     manifest = check_manifest()
     run = EvidenceRun(STATE, "ask", manifest=manifest)

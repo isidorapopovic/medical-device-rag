@@ -9,6 +9,7 @@ from .core import DBDIR, ROOT, all_records
 from .config import ollama_num_ctx, ollama_device_options
 from .schemas import RerankBatch
 from .source_buffer import ACTIVE_RECORDER
+from .runtime import managed_run
 
 COLLECTION = "medical_mdr_evidence"
 
@@ -19,13 +20,8 @@ def open_db():
 
 
 def embeddings(texts: list[str]) -> list[list[float]]:
-    if not texts:
-        return []
-    model = os.getenv("EMBEDDING_MODEL", "embeddinggemma")
-    # Ollama generates embeddings locally, no external embedding API calls.
-    import ollama
-    result = ollama.embed(model=model, input=texts, **({"options": ollama_device_options()} if ollama_device_options() else {}))
-    return [list(v) for v in result["embeddings"]]
+    from .providers import OllamaProvider
+    return OllamaProvider().embed(texts)
 
 
 def rebuild_index() -> tuple[list[str], list[dict]]:
@@ -58,12 +54,11 @@ def _tokens(text: str) -> list[str]:
     return re.findall(r"\b\w{2,}\b", text.casefold())
 
 
+@managed_run
 def _llm_rerank(query: str, passages: list[dict]) -> dict:
     """Locally rerank a candidate set with the configured Ollama chat model."""
     if not passages:
         return {"passages": [], "diagnostics": {"backend": "llm", "scores": []}}
-
-    import ollama
 
     source_ids = [passage["id"] for passage in passages]
     if len(set(source_ids)) != len(source_ids):
@@ -94,17 +89,17 @@ def _llm_rerank(query: str, passages: list[dict]) -> dict:
                                messages[0]["content"], messages[1]["content"],
                                [recorder.buffer.presented(key) for key in ids])
     try:
-        response = ollama.chat(
-            model=os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b"),
-            messages=messages,
+        from .providers import guarded_request
+        response = guarded_request("chat", dict(
+            model=os.getenv("OLLAMA_LLM_MODEL", "qwen3:4b"), messages=messages,
             format=RerankBatch.model_json_schema(),
-            options={"temperature": 0, "num_ctx": ollama_num_ctx(), **ollama_device_options()},
-            think=False,
-        )
+            options={"temperature": 0, "num_ctx": ollama_num_ctx(), **ollama_device_options()}, think=False,
+        ), stage="rerank")
         try:
             ranked = RerankBatch.model_validate_json(response["message"]["content"])
-        except Exception as exc:
-            raise RuntimeError(f"Local LLM returned invalid reranking JSON: {exc}") from exc
+        except (ValueError, KeyError, TypeError):
+            from .errors import ParsingError
+            raise ParsingError() from None
 
         returned_ids = [item.source_id for item in ranked.scores]
         if len(set(returned_ids)) != len(returned_ids) or set(returned_ids) != set(source_ids):

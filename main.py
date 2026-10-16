@@ -5,6 +5,7 @@ import sys
 
 from dotenv import load_dotenv
 from mdr_rag.core import ROOT
+from mdr_rag.runtime import managed_run
 
 load_dotenv(ROOT / ".env")
 from mdr_rag.pipeline import (  # noqa: E402
@@ -12,6 +13,7 @@ from mdr_rag.pipeline import (  # noqa: E402
 )
 
 
+@managed_run
 def main():
     parser = argparse.ArgumentParser(description="EU MDR source-grounded regulatory research")
     parser.add_argument(
@@ -150,6 +152,10 @@ def main():
         elif args.command == "graph":
             from mdr_rag.graph_viz import graph_from_assessment
             graph_from_assessment(args.assessment, args.out, args.max_requirements)
+    except ConnectionError:
+        # SDK connection errors can contain arbitrary endpoint/response text.
+        print("ERROR: missing_model", file=sys.stderr)
+        return 1
     except (ValueError, RuntimeError, FileNotFoundError, FileExistsError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

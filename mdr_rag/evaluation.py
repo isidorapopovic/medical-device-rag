@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .core import ROOT
 from .pipeline import check_manifest
+from .runtime import managed_run
 
 
 def load_gold(path):
@@ -98,6 +99,7 @@ def fusion(semantic_ids, bm25_ids, scores_by_id, take, rrf_k=60):
     return sorted(combined, key=lambda key: combined[key], reverse=True)
 
 
+@managed_run
 def evaluate(gold_path=None, ks=(3, 5, 10), destination=None, include_reranked=None,
              *, methods=None, compare_all=False, run_id=None):
     """Compatibility entry point; all experiments use production candidates."""
