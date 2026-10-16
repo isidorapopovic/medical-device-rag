@@ -84,39 +84,8 @@ def chunks(text: str, size: int = 2000, overlap: int = 250):
 
 
 def source_records(path: Path, kind: str) -> tuple[list[dict[str, Any]], list[str]]:
-    file_sha = digest(path.read_bytes())
-    relative = f"{kind}/{path.name}"
-    warnings = []
-    records = []
-    ext = path.suffix.casefold()
-    if ext == ".pdf":
-        pdf = fitz.open(path)
-        try:
-            for i in range(len(pdf)):
-                text = pdf[i].get_text("text", sort=True)
-                if not text.strip():
-                    warnings.append(f"{relative} page {i+1}: no extractable text (OCR may be needed)")
-                for n, chunk in enumerate(chunks(text), 1):
-                    records.append(make_record(relative, file_sha, kind, i + 1, n, chunk))
-        finally:
-            pdf.close()
-    elif ext == ".docx":
-        doc = Document(path)
-        # Word pages are not stable without layout: cite numbered text blocks.
-        paras = [p.text for p in doc.paragraphs if p.text.strip()]
-        for table in doc.tables:
-            for row in table.rows:
-                paras.append(" | ".join(cell.text for cell in row.cells))
-        for n, paragraph in enumerate(paras, 1):
-            for j, chunk in enumerate(chunks(paragraph), 1):
-                records.append(make_record(relative, file_sha, kind, 0, n * 1000 + j, chunk))
-        if not paras:
-            warnings.append(f"{relative}: no extractable paragraphs")
-    elif ext in {".txt", ".md"}:
-        text = path.read_text(encoding="utf-8-sig")
-        for n, chunk in enumerate(chunks(text), 1):
-            records.append(make_record(relative, file_sha, kind, 0, n, chunk))
-    return records, warnings
+    from .ingestion import parse_records
+    return parse_records(path, kind)
 
 
 def make_record(source: str, sha: str, kind: str, page: int, order: int, text: str):
@@ -135,21 +104,51 @@ def make_record(source: str, sha: str, kind: str, page: int, order: int, text: s
 
 
 def all_records() -> tuple[list[dict], list[str], list[dict]]:
+    from .ingestion import IngestionStore, confined, extraction_warnings, records_from_manifest, safe_filename
+    store = IngestionStore(STATE / "ingestion" if DOCS == ROOT / "documents" else DOCS / ".ingestion")
     all_chunks, warnings, manifest = [], [], []
     for kind in ("legal", "device"):
-        folder = DOCS / kind
+        folder = confined(DOCS, DOCS / kind)
         folder.mkdir(parents=True, exist_ok=True)
+        names = [safe_filename(p.name).casefold() for p in folder.iterdir()
+                 if p.is_file() and p.suffix.lower() in {".pdf", ".docx", ".txt", ".md"}]
+        if len(names) != len(set(names)):
+            raise ValueError("Ambiguous source filenames after Unicode/Windows normalization")
         for path in sorted(folder.iterdir()):
             if not path.is_file() or path.suffix.lower() not in {".pdf", ".docx", ".txt", ".md"}:
                 continue
-            records, problems = source_records(path, kind)
+            ingested, manifest_hash = store.ingest_path(path, kind, allowed_root=DOCS)
+            records, problems = records_from_manifest(ingested, manifest_hash), extraction_warnings(ingested)
             all_chunks.extend(records)
             warnings.extend(problems)
             manifest.append({
-                "source": f"{kind}/{path.name}", "kind": kind,
-                "sha256": digest(path.read_bytes()), "chunks": len(records),
+                "source": f"{kind}/{ingested.document.original_name}", "kind": kind,
+                "sha256": ingested.document.sha256, "chunks": len(records),
+                "document_id": str(ingested.document.id), "document_version": ingested.document.version,
+                "manifest_sha256": manifest_hash, "parser_fingerprint": ingested.parser_fingerprint,
+                "status": ingested.extraction.status,
             })
     return all_chunks, warnings, manifest
+
+
+def resolve_source(source: str, documents_root: Path = DOCS, *, allow_missing: bool = False) -> Path:
+    """Resolve logical normalized labels without renaming user-provided source files."""
+    from .ingestion import confined, safe_filename
+    kind, separator, name = source.partition("/")
+    if kind not in {"legal", "device"} or not separator or "/" in name or "\\" in name:
+        raise ValueError("Invalid source label")
+    target = safe_filename(name).casefold()
+    folder = confined(documents_root, documents_root / kind)
+    matches = [p for p in folder.iterdir() if p.is_file()
+               and p.suffix.casefold() in {".pdf", ".docx", ".txt", ".md"}
+               and safe_filename(p.name).casefold() == target]
+    if not matches and allow_missing:
+        # Preserve the parser's existing missing-file/error and injected-open
+        # interface; callers verifying a manifest leave this disabled.
+        return confined(documents_root, folder / name)
+    if len(matches) != 1:
+        raise ValueError("Missing or ambiguous normalized source filename")
+    return confined(documents_root, matches[0])
 
 
 def location(meta: dict) -> str:

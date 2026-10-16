@@ -38,7 +38,7 @@ class Settings(BaseModel):
     cross_encoder_batch_size: int = Field(default=4, ge=1, le=4)
     cross_encoder_cache: Path = Path("reports/reranker-cache")
     legal_version: str = Field(default="UNSPECIFIED HISTORICAL TEXT", min_length=1, max_length=255)
-    ocr_enabled: Literal[False] = False
+    ocr_enabled: bool = False
     require_human_review: Literal[True] = True
     app_host: Literal["127.0.0.1", "localhost", "::1"] = "127.0.0.1"
     max_llm_calls_per_run: int = Field(default=30, ge=1)

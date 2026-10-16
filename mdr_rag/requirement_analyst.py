@@ -26,6 +26,9 @@ def extract_register(app, pages_spec: str, filename: str | None):
     manifest = check_manifest()
     source = choose_legal_source(filename)
     path = DOCS / source
+    if not path.exists() and path.parent.exists():
+        from .core import resolve_source
+        path = resolve_source(source, DOCS, allow_missing=True)
     if path.suffix.lower() != ".pdf":
         raise ValueError("Requirement extraction currently needs a legal PDF with page numbers")
     pdf = fitz.open(path)

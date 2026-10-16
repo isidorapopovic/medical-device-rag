@@ -12,6 +12,7 @@
 /documents/legal/*
 !/documents/legal/.gitkeep
 /documents/device_profile.json
+/documents/.ingestion/
 
 # Generated indexes, extracted requirements, reports and visualizations
 /vector_db/

@@ -31,7 +31,20 @@ def main():
     subs.add_parser("inspect", help="List files and readable PDF pages")
     locate = subs.add_parser("locate", help="Find text to identify PDF page ranges")
     locate.add_argument("phrase", help='For example: "ANNEX I"')
-    subs.add_parser("index", help="Rebuild the document vector index")
+    index = subs.add_parser("index", help="Rebuild the document vector index")
+    index.add_argument("--force-reembed", action="store_true", help="Recompute every vector instead of reusing matching local vectors")
+    ingest = subs.add_parser("ingest", help="Archive and parse one source revision without inference")
+    ingest.add_argument("--file", required=True)
+    ingest.add_argument("--kind", required=True, choices=["legal", "device"])
+    ingest.add_argument("--project-id", default="local")
+    ingest.add_argument("--ocr", action="store_true", help="Explicit local OCR opt-in; also requires OCR_ENABLED=true")
+    source_view = subs.add_parser("source-view", help="Open archived citation text and original revision metadata")
+    source_view.add_argument("--manifest", required=True)
+    source_view.add_argument("--span", required=True)
+    source_view.add_argument("--project-id", default="local")
+    source_view.add_argument("--start", type=int, default=0)
+    source_view.add_argument("--end", type=int)
+    source_view.add_argument("--context", type=int, default=160)
     ask = subs.add_parser("ask", help="Question-answering with verified source IDs")
     ask.add_argument("question")
     extract = subs.add_parser("extract", help="Draft requirements from ALL chunks on selected PDF pages")
@@ -99,7 +112,31 @@ def main():
         elif args.command == "locate":
             inspect_files(args.phrase)
         elif args.command == "index":
-            run_index()
+            run_index(force_reembed=True) if args.force_reembed else run_index()
+        elif args.command in {"ingest", "source-view"}:
+            import json
+            from pathlib import Path
+            from mdr_rag.core import STATE
+            from mdr_rag.ingestion import IngestionStore
+            store = IngestionStore(STATE / "ingestion", args.project_id)
+            if args.command == "source-view":
+                print(json.dumps(store.view(args.manifest, args.span, start=args.start, end=args.end,
+                                            context=args.context), ensure_ascii=False, indent=2))
+            else:
+                from mdr_rag.document_parsers import TesseractOCR
+                from mdr_rag.settings import load_settings
+                path = Path(args.file).resolve()
+                if args.ocr and not load_settings().ocr_enabled:
+                    raise ValueError("Local OCR requires OCR_ENABLED=true and --ocr")
+                from mdr_rag.document_parsers import MAX_BYTES
+                if path.stat().st_size > MAX_BYTES:
+                    raise ValueError("upload_exceeds_50_mib")
+                document, manifest_hash = store.ingest(args.kind, path.name, path.read_bytes(),
+                    ocr_enabled=args.ocr, ocr=TesseractOCR() if args.ocr else None)
+                print(json.dumps(dict(document=document.document.model_dump(mode="json"),
+                    status=document.extraction.status, manifest_sha256=manifest_hash,
+                    source_span_ids=[span.id for span in document.spans],
+                    diagnostics=document.extraction.diagnostics), ensure_ascii=False, indent=2))
         elif args.command == "ask":
             run_ask(args.question)
         elif args.command == "extract":

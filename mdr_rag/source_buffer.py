@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator, model_serializer
 
 from .core import digest, norm
 
@@ -29,8 +29,18 @@ class ImmutableModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
 
+class ArchiveReference(ImmutableModel):
+    manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    project_key: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_span_id: str = Field(pattern=r"^SP-[a-f0-9]{64}$")
+    document_id: str = Field(pattern=r"^[a-f0-9-]{36}$")
+    document_version: StrictInt = Field(ge=1)
+    normalized_start: StrictInt = Field(ge=0)
+    normalized_end: StrictInt = Field(gt=0)
+
+
 class SourcePassage(ImmutableModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     buffer_id: str
     chunk_id: str = Field(min_length=1)
     kind: Literal["legal", "device"]
@@ -43,9 +53,19 @@ class SourcePassage(ImmutableModel):
     text_sha256: str
     extraction_version: str = Field(min_length=1)
     index_version: str = Field(min_length=1)
+    ingestion: ArchiveReference | None = None
+
+    @model_serializer(mode="wrap")
+    def compatibility_serialization(self, handler):
+        result = handler(self)
+        if self.ingestion is None:
+            result.pop("ingestion", None)
+        return result
 
     @model_validator(mode="after")
     def integrity(self):
+        if (self.schema_version == 2) != (self.ingestion is not None):
+            raise ValueError("Archived source snapshots require an ingestion reference")
         if not self.source.startswith(self.kind + "/"):
             raise ValueError("Source corpus does not match passage kind")
         if self.locator != ("pdf_page" if self.page else "text_block"):
@@ -177,6 +197,10 @@ class SourceBuffer:
                        "locator": "pdf_page" if meta["page"] else "text_block",
                        "text": record["text"], "text_sha256": digest(record["text"].encode("utf-8")),
                        "extraction_version": extraction_version, "index_version": index_version}
+            if "manifest_sha256" in meta:
+                payload["schema_version"] = 2
+                payload["ingestion"] = {key: meta[key] for key in ArchiveReference.model_fields}
+                payload["extraction_version"] = meta["parser_fingerprint"]
             passage = checked_passage({"buffer_id": "SB-" + content_hash(payload), **payload})
         if self.directory is not None:
             from .report_state import atomic_write, exclusive_lock

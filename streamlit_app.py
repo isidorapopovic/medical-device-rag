@@ -4,7 +4,8 @@ from pathlib import Path
 import streamlit as st
 
 from mdr_rag.core import DOCS, source_records
-from mdr_rag.document_ui import SUPPORTED_EXTENSIONS, save_uploaded_document
+from mdr_rag.document_ui import SUPPORTED_EXTENSIONS, ingest_uploaded_document
+from mdr_rag.ingestion import confined, extraction_warnings
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 PREVIEW_CHAR_LIMIT = 12_000
@@ -12,15 +13,19 @@ SUPPORTED_TYPES = sorted(extension.lstrip(".") for extension in SUPPORTED_EXTENS
 
 
 def list_documents(kind: str) -> list[Path]:
-    folder = DOCS / kind
+    if kind not in {"legal", "device"}:
+        raise ValueError("Document type must be legal or device")
+    folder = confined(DOCS, DOCS / kind)
     folder.mkdir(parents=True, exist_ok=True)
-    return sorted(
-        (
-            path for path in folder.iterdir()
-            if path.is_file() and path.suffix.casefold() in SUPPORTED_EXTENSIONS
-        ),
-        key=lambda path: path.name.casefold(),
-    )
+    allowed = []
+    for path in folder.iterdir():
+        try:
+            confined(DOCS, path)
+        except ValueError:
+            continue
+        if path.is_file() and path.suffix.casefold() in SUPPORTED_EXTENSIONS:
+            allowed.append(path)
+    return sorted(allowed, key=lambda path: path.name.casefold())
 
 
 def main() -> None:
@@ -52,11 +57,14 @@ def main() -> None:
                     st.error(f"{upload.name}: file exceeds the 50 MiB upload limit")
                     continue
                 try:
-                    saved_path = save_uploaded_document(kind, upload.name, content)
+                    saved_path, ingested, manifest_hash = ingest_uploaded_document(kind, upload.name, content)
                 except (OSError, ValueError) as exc:
                     st.error(f"{upload.name}: {exc}")
                 else:
                     st.success(f"Saved {saved_path.relative_to(DOCS)}")
+                    st.caption(f"Archived revision {ingested.document.version}; status: {ingested.extraction.status}; manifest: {manifest_hash}")
+                    for warning in extraction_warnings(ingested):
+                        st.warning(warning)
 
     legal_documents = list_documents("legal")
     device_documents = list_documents("device")

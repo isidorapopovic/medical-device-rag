@@ -51,7 +51,7 @@ Before indexing, copy original MDR PDF into `documents/legal/` and medical devic
 
 On CPU, indexing and structured legal extraction may be slow. The legal requirements and regulatory reports remain **draft evidence mappings**, not legal approvals. Small local models can omit obligations and return invalid structured outputs; review their results carefully.
 
-Changing `EMBEDDING_MODEL` requires an intentional index rebuild before using that model with existing data. `index` deletes and recreates the modular collection; do not run it just to verify an existing baseline. Model execution is local, but review your own confidentiality/security requirements.
+Changing `EMBEDDING_MODEL` requires an intentional index rebuild before using that model with existing data. `index` prepares a complete replacement of the modular collection and retains the old collection as a recovery backup; do not run it just to verify an existing baseline. Model execution is local, but review your own confidentiality/security requirements.
 
 ## Local configuration and baseline checks
 
@@ -81,6 +81,33 @@ python -m pytest -q tests/test_foundations.py --basetemp reports/test-temp-found
 ```
 
 Expected: CLI help and deterministic foundations tests pass without Ollama, network, cloud credentials or model weights. Use a dedicated new test temporary path; pytest owns that directory. See the Stage 01 progress document for exact measured results and integration checks not run.
+
+## Stage 02 ingestion and original-file provenance
+
+PDF/DOCX/TXT/Markdown ingestion archives originals and immutable extraction manifests under `state/ingestion/<project hash>/`. Files retain their byte SHA-256, document UUID, revision, MIME and extraction/library versions. Identical re-uploads reuse the same revision; changed bytes under the same logical name create a new revision. Each project and legal/device collection has its own logical document identity. Uploaded filenames never select archive paths. Symlink/junction paths, reserved Windows names, MIME mismatches, unsafe DOCX archives and oversized inputs are checked before publication.
+
+Streamlit uploads now archive revisions before updating the latest working file in `documents/legal` or `documents/device`. Original revisions remain in the archive. The legacy low-level `save_uploaded_document` helper still refuses overwrites and intentionally does not parse content; supported UI uploads use the validated ingestion service. The UI remains a local upload/preview tool, not a full assessment workspace.
+
+Extraction preserves PDF physical pages, DOCX paragraph/table/row/cell order, and TXT/MD block/line locations. Text is normalized once using a named NFC/whitespace policy with a character-to-raw-extraction offset map. Source views show the normalized quote, its raw excerpt and surrounding context, and the original revision's path/page. Offsets refer to Python characters in extracted text, not PDF binary bytes or printed page labels. DOCX/text locations are never called physical pages. Headings are literal structural labels, not inferred regulatory requirements.
+
+Native PDF table reading order is not structurally verified; warnings identify that limitation. DOCX headers, footers, drawings and nested table omissions are diagnosed. Scanned/blank pages become `needs_ocr` or make an otherwise readable document `partial`; failed pages produce no source spans. Encrypted/damaged files, unexpected encodings and empty extraction are explicit diagnostics. Unreadable legal files block indexing rather than silently yielding device-only evidence.
+
+```powershell
+python main.py ingest --file documents/device/synthetic_notes.md --kind device --project-id local
+# Copy manifest_sha256 and a source_span_id from the returned JSON:
+python main.py source-view --manifest MANIFEST_SHA256 --span SOURCE_SPAN_ID --project-id local
+python main.py index
+# Deliberately recompute all vectors, e.g. after changing weights behind a mutable model tag:
+python main.py index --force-reembed
+```
+
+`ingest` archives/parses without indexing or model calls; `source-view` prints private source excerpts only when explicitly requested. The legacy CLI/index uses the `local` project. Other project IDs are supported by the archive/service but are not merged into the legacy vector collection. Repeated indexing reuses matching vectors only when model and project metadata agree. All required embeddings and the candidate collection finish before promotion. Previous collections are retained as named backups; automatic backup deletion is deliberately absent. Collection rename/promotion and the subsequent atomic manifest write are separate local operations, not one database transaction; if manifest publication fails, stop and investigate the retained backup before further review.
+
+New source snapshots use schema 2 with a bound archive reference. Existing schema-1 snapshots/IDs remain readable and unchanged; historical citations with no original archive are explicitly identified as legacy rather than assigned invented revision provenance. New index manifests verify archived originals when reused for review. Nothing in this upgrade automatically re-indexes or rewrites existing data.
+
+Limits: 50 MiB input, 100 MiB expanded DOCX with compression/member/XML checks, 2,000 PDF pages, 20,000 extraction units, 5,000,000 extracted characters, bounded Unicode clusters and context excerpts. Native parser calls are synchronous; these resource limits are not a hardened parser sandbox. OCR is disabled by default. `OCR_ENABLED=true` plus explicit `ingest --ocr` opts into installed local PyMuPDF/Tesseract support, at most 20 scanned pages and bounded raster size; no engine/language data is downloaded. Missing OCR is diagnosed, and OCR-derived text remains visibly unverified. OCR uses shared run-call/deadline guards; its character/image work is not reported as measured LLM tokens. Archived OCR extractions are inspectable but are not silently substituted for native legal evidence in the legacy index.
+
+Deterministic smoke: `python -m pytest -q tests/test_ingestion.py -p no:cacheprovider --basetemp reports/test-temp-ingestion-smoke`. Fixtures are synthetic; no real dossiers, official provisions, ground truth, downloads or model calls are used. Archive snapshots and `source-view` output are private; do not publish them.
 
 ## Bounded review query planning
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pymupdf as fitz
 
-from .core import DOCS, REPORTS, STATE, digest, is_real_quote, is_raw_quote, location, norm, parse_pages, validate_ids
+from .core import DOCS, REPORTS, STATE, ROOT, digest, is_real_quote, is_raw_quote, location, norm, parse_pages, validate_ids
 from .config import ollama_num_ctx
 from .schemas import Answer, AnswerSupportVerification, Finding, RequirementBatch
 from .search import collection, hybrid_search, legal_chunks, rebuild_index
@@ -21,8 +21,8 @@ def now() -> str:
 
 
 def save_json(path: Path, data: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    from .report_state import atomic_write
+    atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def load_json(path: Path) -> dict:
@@ -61,8 +61,8 @@ def inspect_files(search_term: str | None = None):
 
 
 @managed_run
-def run_index():
-    warnings, manifest = rebuild_index()
+def run_index(*, force_reembed: bool = False):
+    warnings, manifest = rebuild_index(force_reembed=True) if force_reembed else rebuild_index()
     audit = {
         "indexed_at_utc": now(), "files": manifest,
         "embedding_model": os.getenv("EMBEDDING_MODEL", "embeddinggemma"),
@@ -77,12 +77,14 @@ def run_index():
 
 
 def check_manifest():
+    from .ingestion import safe_filename
+    from .core import resolve_source
     manifest = load_json(STATE / "manifest.json")
     if manifest["embedding_model"] != os.getenv("EMBEDDING_MODEL", "embeddinggemma"):
         raise RuntimeError("Embedding model changed; rebuild index")
-    indexed_names = {x["source"] for x in manifest["files"]}
+    indexed_names = {f"{x['kind']}/{safe_filename(x['source'].split('/', 1)[1]).casefold()}" for x in manifest["files"]}
     current_names = {
-        f"{kind}/{p.name}"
+        f"{kind}/{safe_filename(p.name).casefold()}"
         for kind in ("legal", "device")
         for p in (DOCS / kind).glob("*")
         if p.is_file() and p.suffix.lower() in {".pdf", ".docx", ".txt", ".md"}
@@ -90,9 +92,18 @@ def check_manifest():
     if current_names != indexed_names:
         raise RuntimeError("Files were added or removed since indexing. Run index again.")
     for item in manifest["files"]:
-        file = DOCS / item["source"]
+        file = resolve_source(item["source"], DOCS)
         if not file.exists() or digest(file.read_bytes()) != item["sha256"]:
             raise RuntimeError(f"File changed since indexing: {file}. Run index again.")
+        if "manifest_sha256" in item:
+            from .ingestion import IngestionStore
+            store = IngestionStore(STATE / "ingestion" if DOCS == ROOT / "documents" else DOCS / ".ingestion")
+            original = store.load(item["manifest_sha256"])
+            if (str(original.document.id) != item["document_id"] or original.document.version != item["document_version"]
+                    or original.document.sha256 != item["sha256"]
+                    or f"{original.document.collection}/{original.document.original_name}" != item["source"]):
+                raise RuntimeError("Indexed extraction manifest identity mismatch")
+            store.original(original)
     return manifest
 
 
@@ -100,6 +111,10 @@ def choose_legal_source(filename: str | None) -> str:
     files = [x["source"] for x in check_manifest()["files"] if x["kind"] == "legal"]
     if filename:
         source = filename if filename.startswith("legal/") else f"legal/{filename}"
+        from .ingestion import safe_filename
+        matches = [item for item in files if safe_filename(item.split("/", 1)[1]).casefold()
+                   == safe_filename(source.split("/", 1)[1]).casefold()]
+        source = matches[0] if len(matches) == 1 else source
         if source not in files:
             raise ValueError(f"Not in indexed legal files: {source}; available: {files}")
         return source

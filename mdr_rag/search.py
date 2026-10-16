@@ -1,6 +1,7 @@
 """Embedding and hybrid (dense + BM25) evidence retrieval."""
 import os
 import re
+from uuid import uuid4
 
 import chromadb
 from rank_bm25 import BM25Okapi
@@ -24,25 +25,60 @@ def embeddings(texts: list[str]) -> list[list[float]]:
     return OllamaProvider().embed(texts)
 
 
-def rebuild_index() -> tuple[list[str], list[dict]]:
+def rebuild_index(*, force_reembed: bool = False) -> tuple[list[str], list[dict]]:
+    if type(force_reembed) is not bool:
+        raise ValueError("force_reembed must be a boolean")
     records, warnings, manifest = all_records()
     if not records:
         raise RuntimeError("Add PDFs/DOCX/TXT files to documents/legal or documents/device first.")
+    if any(item["kind"] == "legal" and item["chunks"] == 0 for item in manifest):
+        raise RuntimeError("Legal source has no readable indexed text; inspect extraction diagnostics before indexing")
     db = open_db()
     existing = [getattr(x, "name", x) for x in db.list_collections()]
-    if COLLECTION in existing:
-        db.delete_collection(COLLECTION)
-    c = db.create_collection(name=COLLECTION, embedding_function=None)
+    previous = db.get_collection(COLLECTION, embedding_function=None) if COLLECTION in existing else None
+    model = os.getenv("EMBEDDING_MODEL", "embeddinggemma")
+    project_key = records[0]["meta"].get("project_key", "legacy")
+    if any(record["meta"].get("project_key", "legacy") != project_key for record in records):
+        raise ValueError("Cannot mix projects in the legacy vector collection")
+    cached = {}
+    if not force_reembed and previous is not None and (previous.metadata or {}).get("embedding_model") == model and (previous.metadata or {}).get("project_key") == project_key:
+        rows = previous.get(include=["embeddings", "documents"])
+        cached = {key: (text, list(vector)) for key, text, vector in
+                  zip(rows["ids"], rows["documents"], rows["embeddings"])}
+    prepared = []
     for begin in range(0, len(records), 32):
         batch = records[begin:begin + 32]
-        vectors = embeddings([x["text"] for x in batch])
-        c.add(
-            ids=[x["id"] for x in batch],
-            documents=[x["text"] for x in batch],
-            metadatas=[x["meta"] for x in batch],
-            embeddings=vectors,
-        )
+        changed = [x for x in batch if x["id"] not in cached or cached[x["id"]][0] != x["text"]]
+        new_vectors = embeddings([x["text"] for x in changed]) if changed else []
+        if len(new_vectors) != len(changed):
+            raise RuntimeError("Embedding batch size mismatch; existing index was preserved")
+        mapped = dict(zip((x["id"] for x in changed), new_vectors))
+        prepared.extend((x, mapped[x["id"]] if x["id"] in mapped else cached[x["id"]][1]) for x in batch)
         print(f"Indexed {min(begin+32, len(records))}/{len(records)} chunks", flush=True)
+    # No collection is replaced until every changed embedding succeeds. A
+    # complete candidate is built separately; keep the old collection as a
+    # recovery backup rather than delete the user's existing index.
+    staged_name = COLLECTION + "_stage_" + uuid4().hex
+    backup_name = COLLECTION + "_backup_" + uuid4().hex
+    c = db.create_collection(name=staged_name, embedding_function=None,
+                             metadata={"embedding_model": model, "project_key": project_key})
+    renamed = False
+    try:
+        for begin in range(0, len(prepared), 32):
+            part = prepared[begin:begin + 32]
+            c.add(ids=[x[0]["id"] for x in part], documents=[x[0]["text"] for x in part],
+                  metadatas=[x[0]["meta"] for x in part], embeddings=[x[1] for x in part])
+        if previous is not None:
+            previous.modify(name=backup_name)
+            renamed = True
+        c.modify(name=COLLECTION)
+    except BaseException:
+        if renamed:
+            previous.modify(name=COLLECTION)
+        # Delete only this invocation's newly created candidate collection.
+        db.delete_collection(staged_name)
+        raise
+    _BM25_CACHE.clear()
     return warnings, manifest
 
 
