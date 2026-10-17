@@ -440,6 +440,8 @@ def decode_state(data) -> ReportState:
 
 
 def compatibility_report(state: ReportState, historical: bool = False) -> dict:
+    from .registry_adapter import report_registry_policy
+    registry_policy = report_registry_policy(state.legal_scope, state.sections, historical=historical)
     rows = []
     buffer = SourceBuffer(state.source_buffer)
     for section in state.sections.values():
@@ -492,6 +494,7 @@ def compatibility_report(state: ReportState, historical: bool = False) -> dict:
         })
     scope = state.legal_scope
     return {
+        "legal_registry": registry_policy,
         "assessment_id": state.assessment_id, "state_revision": state.revision,
         "evidence_gate_mode": state.config.get("gate_mode", "not_performed_legacy"),
         "calibration_fingerprint": state.config.get("calibration") if state.config.get("gate_mode") else None,

@@ -7,7 +7,7 @@ from uuid import UUID
 
 
 ERROR_CODES = {"validation_error", "parsing_error", "missing_model", "transient_model_error", "budget_exceeded",
-               "citation_error", "missing_evidence", "cancelled", "circuit_open", "storage_error", "execution_error"}
+               "citation_error", "missing_evidence", "legal_registry_not_ready", "cancelled", "circuit_open", "storage_error", "execution_error"}
 STAGES = {"generation", "embedding", "rerank", "run", "ocr", "ingestion"}
 
 

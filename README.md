@@ -667,3 +667,123 @@ Offline checks:
 python -m pytest -q tests/test_device_profile.py -p no:cacheprovider
 python -m pytest -q -p no:cacheprovider
 ```
+
+## Stage 04 reviewed regulatory registry
+
+The new registry is **empty until you supply and review legal sources**. No law,
+verified requirement seed, standards text or current-edition claim ships with it.
+`registry.example.json` is an empty import template. The existing `extract`
+command still produces proposals in `requirements_draft.json`; neither model output
+nor an imported `human_validated`/lifecycle flag grants legal authority.
+
+Archive user-supplied legal files with `ingest --kind legal`, then prepare a local
+JSON bundle matching `registry-schema`. Editions retain regulation/jurisdiction,
+original/consolidated/amending text form, source kind, official-origin URL, original
+file hash, archived extraction-manifest hash, publication/amendment/effective dates
+when supplied, and explicit base/superseded edition IDs. Provisions retain edition-
+namespaced IDs, article/annex/section paths, source-span ID, physical PDF page or null,
+exact quote offsets/hash, optional effective dates, dependencies and evidence tags.
+Quote offsets use the named Stage 02 normalized extracted span, not binary file
+offsets; `source-view` resolves the raw extraction and original file.
+
+Use real archived IDs and exact text you are authorized to use. A provision ID must
+start with its edition ID plus a dot. `obligation_key` distinguishes multiple
+reviewed duties within the same section; its default is `main`. Different active
+wording for the same section/key and overlapping dates is blocked. Dependencies
+must be active within the same edition; combined cross-edition applicability is
+deferred. No obligation text, risk class, harmonization or mandatory-standard status
+is inferred from tags, titles, filenames or uploaded instructions.
+
+PowerShell workflow (replace uppercase IDs/paths; the example revisions assume a
+fresh registry, one edition and one provision):
+
+```powershell
+python main.py registry-schema
+python main.py registry-import --file YOUR_LOCAL_BUNDLE.json --reviewer "reviewer" --reason "Import supplied source proposals" --expected-revision 0 --operation-id "import-001"
+
+# Source verification, specialist review and activation are separate human acts.
+python main.py registry-review --table editions --id EDITION_ID --target source_verified --reviewer "reviewer" --reason "Checked original and official origin" --as-of 2026-10-17 --review-until 2026-10-17 --official-origin-checked --expected-revision 1 --operation-id "edition-source-001"
+python main.py registry-review --table editions --id EDITION_ID --target specialist_reviewed --reviewer "specialist" --reason "Reviewed legal edition and applicability dates" --as-of 2026-10-17 --review-until 2026-10-17 --official-origin-checked --expected-revision 2 --operation-id "edition-specialist-001"
+python main.py registry-review --table editions --id EDITION_ID --target active --reviewer "specialist" --reason "Approve this explicitly dated edition scope" --as-of 2026-10-17 --review-until 2026-10-17 --official-origin-checked --expected-revision 3 --operation-id "edition-active-001"
+
+# Repeat the same three transitions for EACH provision, using --table requirements
+# and its edition-namespaced ID. Use the returned revision after every mutation.
+# Coverage inventory approval uses --table coverage --target active, after edition activation.
+
+python main.py registry-coverage --edition EDITION_ID --as-of 2026-10-17
+python main.py registry-check --edition EDITION_ID --as-of 2026-10-17
+python main.py review --registry-edition EDITION_ID --registry-as-of 2026-10-17 --assessment-id reviewed-scope-001
+python main.py registry-export --file reports/registry-export-001.json
+```
+
+The dates above illustrate one-day review validity; supply the dates actually
+attested by the reviewer. No automatic grace period or latest-law assumption exists.
+`proposed -> source_verified -> specialist_reviewed -> active` applies separately
+to editions and provisions. Proposals may be rejected; active entries may be retired.
+Every mutation requires reviewer, reason, expected registry revision and an operation
+ID. Exact retries are idempotent; stale/conflicting requests fail. Reviewer labels
+are self-declared, not authenticated professional credentials.
+
+For explicit legacy conversion, `registry-import --file EDITION_DESCRIPTOR.json
+--draft state/requirements_draft.json ...` binds the old exact quotes/chunk IDs to
+that archived edition; converted entries remain proposed. Normal bundle import
+accepts either bundle JSON or a hashed registry export. Imports always create new
+entries as proposed; exported approval flags are advisory and cannot activate a
+fresh registry. Immutable entry IDs cannot be overwritten with different content.
+Create a new edition/entry and review it explicitly instead.
+
+Coverage manifests contain a manually curated `scope_label` and `expected_paths`
+(e.g. the real section paths the reviewer chose to include). They must be approved
+explicitly; a model's extracted clause list never defines expected coverage.
+Reports show loaded/active/missing paths, lifecycle counts, approval as-of date,
+currentness/amendment warnings and **partial registry coverage** when incomplete or
+no approved inventory exists. A complete inventory means only “complete within
+manually selected scope”; it does not establish exhaustive MDR obligation coverage.
+A verified, effective superseding amendment blocks selection of its unresolved older
+edition. Overlapping active editions require explicit retirement of the old one.
+Expired, future, rejected, retired or unsupported sources cannot pass the law gate.
+
+`registry-check` and registry-backed `review` fail with
+`legal_registry_not_ready` before inference when approved active law is unavailable.
+Current registry-backed reports revalidate the saved registry revision, selected IDs,
+source integrity and dated approvals before publication. A retirement/change blocks
+current export; historical exports retain a labelled frozen snapshot without current
+authority. Assessment models still perform evidence review, not definitive legal
+applicability or conformity decisions; the next stage owns the applicability engine.
+
+For compatibility, ordinary legacy `review` remains an explicitly unverified research
+workflow. Its JSON/Markdown reports now say `draft_research_only`,
+`legal_registry_not_ready` and `partial registry coverage`; it cannot provide
+authoritative applicability. Existing CLI commands, assessments and report histories
+remain readable. No existing register, index or source file is migrated automatically.
+
+State is in `state/regulatory_registry/<project hash>/registry.sqlite3`: versioned
+SQLite migrations, edition/provision/coverage tables, revision metadata and
+transactional audit events. A separate database preserves the run ledger's
+usage-only responsibility. Imports/approvals and audit/revision updates commit
+together. Selection/coverage/export use coherent database snapshots. Exported JSON
+has a canonical content SHA-256; export refuses an existing destination. Source
+archives must remain available for import, activation, selection and export.
+Use `--project-id` consistently for separate registries; legacy review integrates
+only the `local` project.
+
+Binding law, nonbinding guidance and standards are distinct source kinds. Guidance
+and standards cannot supply binding-law applicability through this gate. Standards
+export requires both a declared redistribution-rights flag and a recorded human
+rights attestation; an imported flag alone is insufficient. URLs are retained for
+human checking and never fetched. The code does not authenticate government sites,
+reviewers, legal dates, rights or specialist judgments.
+
+`--fixture-only` creates an isolated synthetic registry for offline tests. Synthetic
+editions require explicit synthetic labels and cannot be mixed with real-source
+registries. The production CLI law check and review adapter refuse fixture authority.
+No synthetic fixture text is presented as official law. OCR-derived legal evidence is
+withheld from approval. The CLI bounds imported JSON to 20 MiB; no dependencies,
+cloud calls or model operations are added by registry administration.
+
+Offline checks:
+
+```powershell
+python -m pytest -q tests/test_regulatory_registry.py -p no:cacheprovider
+python -m pytest -q -p no:cacheprovider
+```

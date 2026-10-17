@@ -1,6 +1,6 @@
 # Implementation progress
 
-**Current stage: STAGE_03=PASS**
+**Current stage: STAGE_04=PASS**
 
 **STAGE_01=PASS** - final measured result below supersedes intermediate statuses.
 
@@ -191,3 +191,47 @@ Rollback: revert only this Stage 03 commit to the prior baseline f4d9206; preser
 
 Commit: User explicitly requested a new commit on the same branch, overriding the prompt pack's default no-commit instruction. Commit subject: Implement Stage 03 evidence-linked device profiles and audited review. See git log for the resulting commit ID.
 Next stage: `docs/day_two_prompts/stages/04_REGULATORY_REGISTRY.md`. STOP after Stage 03 and the user-requested commit on the existing branch.
+
+
+## Stage 04 implementation in progress (2026-10-17)
+
+STAGE_04=IN_PROGRESS. Baseline a3d73ae on feat/stage-01-foundations-telemetry; initially clean tree. Read full Stage 04, AGENTS, architecture/test matrix, README, Stage 01 contracts/ledger, Stage 02 archive, Stage 03 decisions, draft extraction and review/report paths. Plan: separate project-scoped SQLite edition/provision/coverage tables and transactional audited lifecycle; exact archived-source import/export with draft-only imports; active-law and coverage/currentness gates; additive CLI and guarded review/report integration; negative/offline/fault tests, full regression, docs and same-branch user-authorized commit. No legal fetch, model downloads, new dependencies or next-stage work.
+
+## Final Stage 04 gate (2026-10-17)
+
+STAGE_04=PASS. Stage 05 has not started. This is an implementation/test gate, not verification of any real legal edition or device conformity.
+
+Actual files:
+- regulatory_registry.py: typed edition/provision/coverage/bundle/export/attestation contracts; separate project-scoped SQLite migrations/tables; immutable payload hashes; exact source binding; transactional revision/audit/idempotency; human lifecycle; dated active-law, amendment, dependency, rights and coverage gates.
+- registry_cli.py and main.py: registry-import/export/review/coverage/check/schema and additive review --registry-edition/--registry-as-of flags. Imported exported approval flags never grant authority; explicit legacy draft conversion remains proposed.
+- registry_adapter.py, review_state.py and report_state.py: approved-only register adapter, frozen registry selection/revision in assessment scope, resume/render integration and export revalidation. Inactive/retired/changed requirements block current registry-backed reports before file publication.
+- Q_Mix_report_writer.py: visible registry authority, coverage and warning lines; legacy reports remain research-only, never authoritative law.
+- telemetry.py: allowlist legal_registry_not_ready without raw exception logging.
+- tests/test_regulatory_registry.py: 69 synthetic offline cases. Existing test files unchanged.
+- registry.example.json: empty schema-valid bundle, no normative seed. README plus decisions/progress explain usage, compatibility and limits. No requirements/.env/rag.py or client source/index files modified.
+
+Measured validation:
+
+| Check | Result |
+|---|---|
+| `.\.venv\Scripts\python.exe -m pytest -q tests/test_regulatory_registry.py -p no:cacheprovider` | PASS: 69 passed in 10.37s |
+| Earlier existing report-state/orchestrator/day-two-baseline/foundations suite | PASS: 139 passed in 41.58s |
+| `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider` | PASS: 574 passed, 1 skipped in 128.30s (2m08s); no warnings |
+| `.\.venv\Scripts\python.exe -m compileall -q main.py mdr_rag tests/test_regulatory_registry.py` | PASS |
+| Main/registry-import/review help, AST parsing, empty template validation, ignored registry storage | PASS: all 19 existing commands retained; six registry commands added |
+| git diff --check and new-file whitespace | PASS |
+| Ruff/Black/mypy | NOT RUN: not installed/configured; no tool installation |
+| Real Ollama, OCR, cross-encoder, browser UI, actual legal-source/expert verification | NOT RUN: no live integrations or real law attestation claimed; existing optional real-model test skipped |
+
+Negative/fault checks cover missing law/URL/dates, lifecycle skipping, imported active flags, inactive/draft/withdrawn requirements, forged quotes/pages/hashes, same-section IDs across editions, duplicate clauses, conflicting amendments and sections, cyclic lineage, future/stale effective and approval dates, verified superseding amendment blocks, coverage missing a selected section, dependencies invalidated by retirement, standards rights and nonbinding guidance, cross-project/device-source rejection, immutable edits, optimistic concurrency, consistent read snapshots, interrupted transactional publication, newer schema rejection, export content roundtrip/tampering, schema error redaction, and inert uploaded instructions. Test-only fixture selectors exercise report integration while production selection refuses synthetic authority.
+
+Compatibility/deviations: legacy draft extraction and ordinary review retain their existing evidence-research workflow but now explicitly report draft_research_only, partial registry coverage and legal_registry_not_ready. Authoritative registry-backed review/check fails before inference without approved active law. This preserves legacy commands/tests without promoting drafts. The actual applicability engine remains Stage 05; no current law or full legal coverage is invented. Existing assessments/SourceBuffer and runtime ledger retain their ownership.
+
+Limits: one legal edition/local-project legacy review integration per assessment; cross-edition composition deferred. Real source authority, legal dates, rights, professional qualification and normative scope remain human responsibilities; reviewer labels are self-declared. Coverage completeness is only within the manually approved section inventory and does not prove exhaustive obligations. Standards/guidance never become binding law merely by mention. Registry-backed review still requires the existing matching live corpus/index; no index rebuild occurs automatically. Retired snapshots remain historical rather than current selectable law. Original archives are required, repeated hash checks can be IO-heavy, and no dossier performance benchmark is claimed. SQLite selection is coherent, but later filesystem report publication is not one atomic cross-store transaction; reports are dated revision snapshots. No automatic approval renewal/deletion/network synchronization.
+
+Cost: 0 live model/API/network calls, $0 cloud spend, no downloads, dependency installation, legal fetch or user corpus/index rebuild. Registry administration is deterministic local SQLite/JSON/hash IO. Existing temporary Chroma tests use fake embeddings; model operations continue using Stage 01 guards if the existing optional drafting workflow is invoked. Test artifacts/runtime state remain ignored.
+
+Rollback: revert only the Stage 04 commit back to a3d73ae while retaining state/regulatory_registry, state/ingestion, state/profiles and all assessment/source histories. Earlier code ignores the new registry database and cannot validate new registry-bound reports; retain this reader or export labelled historical snapshots. No data cleanup or rollback was performed.
+
+Commit: explicitly authorized by the user on the existing feat/stage-01-foundations-telemetry branch. Subject: Implement Stage 04 reviewed regulatory registry and active-law report gates. No push/deployment.
+Next stage: `docs/day_two_prompts/stages/05_APPLICABILITY_ENGINE.md`. STOP after the Stage 04 commit.

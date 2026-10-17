@@ -51,6 +51,8 @@ def main():
     extract.add_argument("--pages", required=True, help='PDF page numbers, e.g. "89-92,94"')
     extract.add_argument("--legal-file", help="Filename in documents/legal")
     review = subs.add_parser("review", help="Map requirements to device evidence")
+    review.add_argument("--registry-edition", help="Use only approved active legal registry provisions")
+    review.add_argument("--registry-as-of", help="Explicit YYYY-MM-DD legal assessment date")
     review.add_argument("--limit", type=int, default=None, help="Only first N requirements (marks output partial)")
     review.add_argument("--k", type=int, default=None, help="Device chunks per requirement (new: 7; resume: saved value)")
     review.add_argument("--assessment-id", help="Persistent assessment ID (generated for a new run if omitted)")
@@ -94,6 +96,8 @@ def main():
     graph.add_argument("--max-requirements", type=int, default=140)
     from mdr_rag.profile_cli import add_commands
     add_commands(subs)
+    from mdr_rag.registry_cli import add_commands as add_registry_commands
+    add_registry_commands(subs)
     args = parser.parse_args()
     if args.retrieval is not None:
         os.environ["RETRIEVAL_MODE"] = args.retrieval
@@ -109,7 +113,11 @@ def main():
     if args.rerank or args.rerank_backend is not None:
         config_overrides["reranker_backend"] = "llm" if args.rerank else args.rerank_backend
     try:
-        if args.command.startswith("profile-"):
+        if args.command.startswith("registry-"):
+            from mdr_rag.registry_cli import execute as execute_registry
+            from mdr_rag.core import STATE
+            execute_registry(args, STATE)
+        elif args.command.startswith("profile-"):
             from mdr_rag.profile_cli import execute
             from mdr_rag.core import STATE
             execute(args, STATE)
@@ -149,7 +157,7 @@ def main():
             extract_requirements(args.pages, args.legal_file)
         elif args.command == "review":
             run_review(args.limit, args.k, assessment_id=args.assessment_id, resume=args.resume,
-                       requirement_id=args.requirement_id, refresh=args.refresh, config_overrides=config_overrides, use_env_config=args.use_env_config)
+                       requirement_id=args.requirement_id, refresh=args.refresh, config_overrides=config_overrides, use_env_config=args.use_env_config, **({"registry_edition": args.registry_edition, "registry_as_of": args.registry_as_of} if args.registry_edition or args.registry_as_of else {}))
         elif args.command == "report":
             from mdr_rag.review_state import render_report
             render_report(args.assessment_id, historical=args.historical, revision=args.revision, config_overrides=config_overrides, use_env_config=args.use_env_config)

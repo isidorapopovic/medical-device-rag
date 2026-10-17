@@ -156,9 +156,12 @@ def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, con
 
 
 def scope_from_draft(draft: dict) -> dict:
-    return {key: draft.get(key, []) if key in {"unreadable_selected_pages", "rejected_unverifiable_quotes"}
-            else draft[key] for key in ("source", "source_sha256", "legal_version_label", "selected_pdf_pages",
-                                       "unreadable_selected_pages", "rejected_unverifiable_quotes")}
+    result = {key: draft.get(key, []) if key in {"unreadable_selected_pages", "rejected_unverifiable_quotes"}
+              else draft[key] for key in ("source", "source_sha256", "legal_version_label", "selected_pdf_pages",
+                                         "unreadable_selected_pages", "rejected_unverifiable_quotes")}
+    if "registry_selection" in draft:
+        result["registry_selection"] = draft["registry_selection"]
+    return result
 
 
 def new_state(assessment_id, draft, manifest, profile, config):
@@ -356,7 +359,7 @@ def perform_stage(stage, section, config, profile, app, state, persist_trace):
     state.source_buffer = buffer.snapshots
 
 
-def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False, config_overrides=None, use_env_config=False, evaluation_requirement_id=None):
+def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirement_id=None, refresh=False, config_overrides=None, use_env_config=False, evaluation_requirement_id=None, registry_edition=None, registry_as_of=None):
     from . import pipeline as app
 
     if evaluation_requirement_id and (limit is not None or requirement_id or resume or refresh):
@@ -385,7 +388,9 @@ def run_review(limit=None, k=None, *, assessment_id=None, resume=False, requirem
             raise FileNotFoundError(f"No assessment at {store.path}")
         state = store.load() if exists else None
         # No extraction on resume: consume the existing register and validate its anchors.
-        draft = app.load_json(app.STATE / "requirements_draft.json")
+        from .registry_adapter import review_register
+        draft = review_register(app, edition_id=registry_edition, as_of=registry_as_of,
+                                saved_scope=state.legal_scope if state else None)
         selected_id = requirement_id or evaluation_requirement_id
         if selected_id and selected_id not in {req["id"] for req in draft["requirements"]}:
             raise ValueError(f"Unknown requirement ID: {selected_id}")
@@ -491,7 +496,8 @@ def render_report(assessment_id: str, *, historical=False, revision=None, config
                 raise RuntimeError("Imported legacy findings lack dependency validation. Use --historical or resume to recompute.")
             config = resolve(state.config, state.config["k"], config_overrides, use_env_config, configuration)
             with scoped_environment(environment(config)):
-                draft = app.load_json(app.STATE / "requirements_draft.json")
+                from .registry_adapter import review_register
+                draft = review_register(app, saved_scope=state.legal_scope)
                 try:
                     manifest = app.check_manifest()
                     app.check_regulation_alignment(draft)
