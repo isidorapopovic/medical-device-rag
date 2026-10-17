@@ -63,7 +63,10 @@ Desktop.ini
 
 
 # Keep local implementation notes and prompt packs private
-docs/
+
+
+
+
 
 # Accidental terminal capture; preserve the local file
 /how HEAD

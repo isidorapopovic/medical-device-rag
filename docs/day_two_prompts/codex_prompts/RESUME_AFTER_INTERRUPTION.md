@@ -1,0 +1,3 @@
+# RESUME PROMPT — Continue the autonomous implementation
+
+You are continuing Product A work in the existing medical-device-rag repository. Read AGENTS.md, docs/implementation/PROGRESS.md, docs/implementation/EXECUTION_PLAN.md, docs/implementation/DECISIONS.md, the stage specifications and codex_prompts/MASTER_RUN_ALL_STAGES.md. Verify actual git diff and current test state, not just reported PASS markers. Find the FIRST incomplete or failed stage among 00–12. Resume that stage at the smallest safe next task; do not repeat completed or destructive steps. Follow the master run rules and auto-continue after each successful gate. Never claim compliance or invent regulatory sources. Stop at a critical blocker and report exact test commands, changed files, and next action.
