@@ -4,6 +4,7 @@ import logging
 import os
 
 from . import core, pipeline, search
+from .qa_types import AnswerResult
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,54 @@ class IndexResult:
     success: bool
     status: IndexStatus
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class QuestionContext:
+    sources: tuple[str, ...] = ()
+    index_version: str = ""
+    error: str | None = None
+
+
+def get_question_context() -> QuestionContext:
+    """Offer only documents from a currently verified index manifest."""
+    try:
+        status = get_index_status()
+        if status.state != "Ready":
+            return QuestionContext(error=f"{status.state}: {status.reason}")
+        audit = pipeline.check_manifest()
+        return QuestionContext(tuple(item["source"] for item in audit["files"]),
+                               search.index_fingerprint(audit["files"], audit["embedding_model"]) +
+                               ":" + audit.get("indexed_at_utc", ""))
+    except Exception:
+        logger.exception("Could not load question source selection")
+        return QuestionContext(error="Index could not be verified. Rebuild it in Documents before asking.")
+
+
+def ask_question(question: str, selected_sources: set[str] | None = None, k: int = 5) -> AnswerResult:
+    """UI boundary around the shared CLI/Q&A engine with safe, actionable errors."""
+    context = get_question_context()
+    if context.error:
+        return AnswerResult(question, status="index_invalid", error=context.error)
+    selection = set(context.sources) if selected_sources is None else set(selected_sources)
+    if not selection or not selection <= set(context.sources):
+        return AnswerResult(question, status="invalid_selection",
+                            error="Select at least one document from the current index.")
+    try:
+        return pipeline.ask_question(question, selected_sources=selection, k=k)
+    except Exception as exc:
+        from .errors import ParsingError, MissingModel
+        from pydantic import ValidationError
+        logger.exception("Question answering failed")
+        if isinstance(exc, (ParsingError, ValidationError)):
+            message = "The local model returned an invalid structured answer. Retry or check the configured chat model."
+        elif isinstance(exc, MissingModel):
+            message = "A configured Ollama model is missing. Install the chat and embedding models in .env, then retry."
+        else:
+            message = ("Could not complete the question. Check that Ollama is running, the configured chat and "
+                       "embedding models are installed, and local storage is writable, then retry. "
+                       "Developer logs contain details.")
+        return AnswerResult(question, status="error", error=message)
 
 
 def get_index_status() -> IndexStatus:

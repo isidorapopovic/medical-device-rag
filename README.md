@@ -1,6 +1,6 @@
 # Medical Device RAG
 
-The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing and preview); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
+The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and single-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
 `rag.py` is a separate, older Gemini prototype retained for reference, not the supported application. It imports `mdr_rag.tls` and `mdr_rag.quota`, which are not present in this checkout, and expects Gemini dependencies and credentials not used by the modular app. Do not use it for the supported workflow; use `main.py` instead. The script is retained in place. It uses the same `vector_db/` directory but a separate collection named `medical_device_rag_<Gemini embedding model with hyphens replaced by underscores>`; the modular app uses `medical_mdr_evidence`. Do not delete, migrate or reuse the legacy collection as an Ollama index.
 
@@ -86,7 +86,7 @@ Expected: CLI help and deterministic foundations tests pass without Ollama, netw
 
 PDF/DOCX/TXT/Markdown ingestion archives originals and immutable extraction manifests under `state/ingestion/<project hash>/`. Files retain their byte SHA-256, document UUID, revision, MIME and extraction/library versions. Identical re-uploads reuse the same revision; changed bytes under the same logical name create a new revision. Each project and legal/device collection has its own logical document identity. Uploaded filenames never select archive paths. Symlink/junction paths, reserved Windows names, MIME mismatches, unsafe DOCX archives and oversized inputs are checked before publication.
 
-Streamlit uploads now archive revisions before updating the latest working file in `documents/legal` or `documents/device`. Original revisions remain in the archive. The legacy low-level `save_uploaded_document` helper still refuses overwrites and intentionally does not parse content; supported UI uploads use the validated ingestion service. The UI provides local upload, indexing and preview; assessment controls remain in the CLI.
+Streamlit uploads now archive revisions before updating the latest working file in `documents/legal` or `documents/device`. Original revisions remain in the archive. The legacy low-level `save_uploaded_document` helper still refuses overwrites and intentionally does not parse content; supported UI uploads use the validated ingestion service. The UI provides local upload, indexing, preview and single-turn Q&A; assessment controls remain in the CLI.
 
 Extraction preserves PDF physical pages, DOCX paragraph/table/row/cell order, and TXT/MD block/line locations. Text is normalized once using a named NFC/whitespace policy with a character-to-raw-extraction offset map. Source views show the normalized quote, its raw excerpt and surrounding context, and the original revision's path/page. Offsets refer to Python characters in extracted text, not PDF binary bytes or printed page labels. DOCX/text locations are never called physical pages. Headings are literal structural labels, not inferred regulatory requirements.
 
@@ -296,6 +296,36 @@ The offline acceptance test exercises PDF save, stale status, button indexing, R
 ```powershell
 .venv/Scripts/python.exe -m pytest -q tests/test_app_services.py tests/test_document_ui.py tests/test_ingestion.py
 .venv/Scripts/python.exe -m pytest -q
+```
+
+### Ask Questions and inspect sources
+
+After the index shows **Ready**, use **Ask Questions**. All documents from the verified manifest are selected initially. Use **Source collections** to choose all, legal only or device only, then **Indexed documents** to select any subset. Selecting no documents disables **Ask**. Missing or stale indexes block questions until rebuilt. Install both configured local models (`EMBEDDING_MODEL` and `OLLAMA_LLM_MODEL` in `.env`) and keep Ollama running; defaults are `embeddinggemma` and `qwen3:4b`.
+
+Enter a question and click **Ask**. Dense retrieval applies the document filter in Chroma before top-k selection; BM25 ranks only the selected corpus, and reranking receives only selected passages. A source selection is part of the BM25 cache key. Identical filenames in legal and device folders remain distinct canonical source IDs. Single-chunk selections retain positive BM25 matching weights, avoiding the library's negative average-IDF edge case.
+
+A **Supported** answer has passed the existing claim inventory, literal citation-span checks and local-model semantic review. Expand each **Verified cited source** to see its actual chunk ID, filename, physical PDF page or text block, and full indexed text. Only sources cited by accepted claim links appear here; retrieved but uncited candidates do not. Unknown source IDs, invented quotes, unreferenced claims or rejected support checks withhold the draft answer and citations. **Insufficient evidence** is distinct from errors such as an unavailable model or invalid structured output. Check the displayed retry guidance; exception details are logged for developers.
+
+These checks use uploaded text only. Historical legal documents may omit amendments, and model-reviewed support is not a human audit or a compliance decision. Generation and verification treat documents and questions as untrusted input. Original files remain downloadable in **Document preview**. `python main.py ask "What records are required?"` uses the same typed Q&A engine and keeps its answer/citation output format.
+
+This is single-turn Q&A. Only the latest result is kept in the current Streamlit session and redrawn on ordinary reruns without additional model calls. Changing document selection hides that result; a changed, invalid or rebuilt index clears it. There is no conversational context or chat-history UI. Existing audit snapshots, including questions and source excerpts, remain local under ignored `state/evidence_runs/` and `state/source_buffer/`.
+
+Offline acceptance tests use two generated readable legal PDFs, a device DOCX, real parsing and temporary Chroma, with inference mocked. They submit questions through Streamlit, inspect actual source text, switch document selections, test abstention/errors, and check for duplicate requests. To verify with a live local model, index your sources, select one legal PDF, ask a question about a passage it contains, then ask for a fact absent from the selected text (for example an unrelated device's serial number). Expect a verified answer for supported claims or explicit abstention, and never a fabricated answer for the absent fact. Select only the device DOCX and repeat; all displayed sources must belong to the selection.
+
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/test_question_services.py tests/test_query_retrieval.py tests/test_core.py tests/test_claim_audit.py
+.venv/Scripts/python.exe -m pytest -q
+python -m streamlit run streamlit_app.py --server.address 127.0.0.1
+```
+
+An opt-in real-model smoke uses the first readable page of an uploaded legal PDF, real embeddings, two questions (one about printed text and one requesting an absent serial number), and isolated temporary storage. It fails on technical errors or a supported answer to the absent fact. It does not require a supported answer to the first question: conservative verification may abstain. Run with installed configured models; `QA_SMOKE_MODEL` optionally selects another installed chat model for this test only:
+
+```powershell
+$env:RUN_QA_SMOKE = "1"
+# Optional, if intentionally testing another installed model:
+# $env:QA_SMOKE_MODEL = "qwen3:1.7b"
+.venv/Scripts/python.exe -m pytest -q -s tests/test_qa_smoke.py
+Remove-Item Env:RUN_QA_SMOKE
 ```
 
 ---

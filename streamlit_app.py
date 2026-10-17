@@ -5,7 +5,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from mdr_rag.core import DOCS, ROOT, source_records
-from mdr_rag.app_services import get_index_status, index_documents
+from mdr_rag.app_services import get_index_status, index_documents, get_question_context, ask_question
 from mdr_rag.document_ui import SUPPORTED_EXTENSIONS, ingest_uploaded_document
 from mdr_rag.ingestion import confined, extraction_warnings
 
@@ -13,6 +13,62 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 PREVIEW_CHAR_LIMIT = 12_000
 SUPPORTED_TYPES = sorted(extension.lstrip(".") for extension in SUPPORTED_EXTENSIONS)
 load_dotenv(ROOT / ".env")
+
+
+def render_question_controls() -> None:
+    st.header("Ask Questions")
+    st.caption("Answers use only your selected indexed documents and local Ollama. "
+               "Uploaded legal documents may be outdated; this is not a compliance decision.")
+    context = get_question_context()
+    if context.error:
+        st.warning(context.error)
+    # Reset the default selection when the index changes, without regenerating an answer.
+    if st.session_state.get("question_index_version") != context.index_version:
+        st.session_state["question_sources"] = list(context.sources)
+        st.session_state["question_index_version"] = context.index_version
+        st.session_state.pop("question_result", None)
+    scope = st.radio("Source collections", ["All documents", "Legal only", "Device only"], horizontal=True)
+    options = [source for source in context.sources if scope == "All documents" or
+               source.startswith("legal/" if scope == "Legal only" else "device/")]
+    if st.session_state.get("question_collection_scope") != scope:
+        st.session_state["question_sources"] = options
+        st.session_state["question_collection_scope"] = scope
+    selected = st.multiselect("Indexed documents", options=options, key="question_sources",
+                             format_func=lambda source: source.replace("legal/", "Legal / ", 1)
+                             if source.startswith("legal/") else source.replace("device/", "Device / ", 1),
+                             disabled=bool(context.error))
+    if not selected:
+        st.info("Select at least one indexed document to ask a question.")
+    with st.form("ask_question_form"):
+        question = st.text_area("Question", key="single_question", max_chars=4000)
+        submitted = st.form_submit_button("Ask", disabled=bool(context.error) or not selected)
+    view_key = (context.index_version, tuple(sorted(selected)))
+    if submitted:
+        with st.spinner("Retrieving selected documents and checking the answer…"):
+            result = ask_question(question, selected_sources=set(selected))
+        st.session_state["question_result"] = (view_key, result)
+    saved = st.session_state.get("question_result")
+    if not saved or saved[0] != view_key or context.error:
+        return
+    result = saved[1]
+    st.caption(f"Question: {result.question}")
+    if result.status == "supported":
+        st.success("Supported — citation spans checked and support reviewed by the local model")
+        st.write(result.answer)
+        st.subheader("Verified cited sources")
+        for source in result.sources:
+            place = f"PDF page {source.page}" if source.page else f"text block {source.block} (no stable page number)"
+            with st.expander(f"{source.source} — {place} — {source.id}"):
+                st.caption(f"Source ID: {source.id}")
+                st.text(source.excerpt)
+    elif result.status in {"insufficient_evidence", "verification_failed"}:
+        st.warning("Insufficient evidence" if result.status == "insufficient_evidence" else
+                   "Insufficient evidence — answer verification did not pass")
+        st.write(result.answer)
+    if result.error:
+        st.error(result.error)
+    for limitation in result.limitations:
+        st.caption(limitation)
 
 
 def render_index_controls() -> None:
@@ -66,7 +122,7 @@ def list_documents(kind: str) -> list[Path]:
 def main() -> None:
     st.set_page_config(page_title="Medical Device RAG", page_icon="📄", layout="wide")
     st.title("Medical Device RAG")
-    st.caption("Upload, index and preview local legal and device source documents.")
+    st.caption("Upload, index, preview and ask questions about local legal and device source documents.")
     st.info(
         "Files are stored in this project's documents folder. Uploading does not index "
         "them or send them to a model. This app has no authentication; keep it bound to "
@@ -110,6 +166,8 @@ def main() -> None:
     summary_left.metric("Legal / regulatory files", len(legal_documents))
     summary_right.metric("Device files", len(device_documents))
     render_index_controls()
+    render_question_controls()
+    st.subheader("Document preview")
 
     category = st.selectbox(
         "Browse category",

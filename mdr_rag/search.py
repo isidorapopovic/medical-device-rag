@@ -192,11 +192,13 @@ def hybrid_search(
     mode: str | None = None,
     rerank: bool | None = None,
     backend: str | None = None,
+    sources: set[str] | None = None,
 ) -> list[dict]:
     """Compatibility single-query interface over the shared candidate API."""
-    result = retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank, backend=backend)
+    options = {"sources": sources} if sources is not None else {}
+    result = retrieve_candidates([query], kind, k=k, mode=mode, rerank=rerank, backend=backend, **options)
     recorder = ACTIVE_RECORDER.get()
-    if result["trace"]["corpus_size"] == 0 and recorder is not None and recorder.manifest and any(
+    if sources is None and result["trace"]["corpus_size"] == 0 and recorder is not None and recorder.manifest and any(
             item["kind"] == kind for item in recorder.manifest.get("files", [])):
         raise RuntimeError("Indexed corpus is empty despite a populated manifest; verify the existing index without rebuilding it automatically")
     return result["passages"]
@@ -206,7 +208,8 @@ _BM25_CACHE = {}
 
 
 def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
-                        manifest_fingerprint=None, per_backend=12, merged_limit=30, backend=None, rerank_query=None):
+                        manifest_fingerprint=None, per_backend=12, merged_limit=30, backend=None, rerank_query=None,
+                        sources: set[str] | None = None):
     """Two-level reciprocal rank fusion with bounded work and query provenance.
 
     Raw backend scores are diagnostic only. Cache keys include the immutable
@@ -231,15 +234,23 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
     from .reranking import backend_selection, capture_scores
     selected_backend = backend_selection(backend, rerank)
     rerank = selected_backend != "none"
+    scope = None if sources is None else tuple(sorted(source for source in sources if source.startswith(kind + "/")))
+    where = {"kind": kind} if scope is None else {
+        "$and": [{"kind": kind}, {"source": {"$in": list(scope)}}]
+    }
     c = collection()
     collection_identity = getattr(c, "id", type(c))
-    cache_key = (str(DBDIR.resolve()), COLLECTION, collection_identity, kind, manifest_fingerprint)
+    cache_key = (str(DBDIR.resolve()), COLLECTION, collection_identity, kind, manifest_fingerprint, scope)
     cached = _BM25_CACHE.get(cache_key) if manifest_fingerprint else None
     if cached is None:
-        everything = c.get(where={"kind": kind}, include=["documents", "metadatas"])
+        # Chroma rejects an empty $in. An empty selection must never mean all.
+        everything = (c.get(where=where, include=["documents", "metadatas"]) if scope != ()
+                      else {"ids": [], "documents": [], "metadatas": []})
         records = {}
         for idx, doc, meta in zip(everything["ids"], everything["documents"], everything["metadatas"]):
             if meta.get("kind") != kind or not meta.get("source", "").replace("\\", "/").startswith(kind + "/"):
+                continue
+            if scope is not None and meta.get("source") not in scope:
                 continue
             records[idx] = {"id": idx, "text": doc, "meta": dict(meta)}
         ids = sorted(records)
@@ -248,6 +259,9 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
     records, ids, corpus, bm25 = cached
     if mode in {"bm25", "hybrid"} and ids and any(corpus) and bm25 is None:
         bm25 = BM25Okapi(corpus)
+        # With a single selected chunk (or ubiquitous terms), rank_bm25's
+        # epsilon * average-IDF can be negative and suppress every real match.
+        bm25.idf = {term: max(weight, 1e-6) for term, weight in bm25.idf.items()}
         cached = (records, ids, corpus, bm25)
     if manifest_fingerprint:
         if cache_key not in _BM25_CACHE and len(_BM25_CACHE) >= 4:
@@ -260,7 +274,7 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
         if ids and mode in {"dense", "hybrid"}:
             vector = embeddings([query])[0]
             result = c.query(query_embeddings=[vector], n_results=min(per_backend, len(ids)),
-                             where={"kind": kind}, include=["metadatas", "documents", "distances"])
+                             where=where, include=["metadatas", "documents", "distances"])
             backend_lists["dense"] = list(dict.fromkeys(idx for idx in result["ids"][0] if idx in records))[:per_backend]
         if bm25 is not None and mode in {"bm25", "hybrid"}:
             raw = bm25.get_scores(_tokens(query))
@@ -284,7 +298,7 @@ def retrieve_candidates(queries, kind, k=7, mode=None, rerank=None, *,
     winners = sorted(scores, key=lambda idx: (-scores[idx], idx))[:merged_limit]
     passages = [{"id": idx, "text": records[idx]["text"], "meta": dict(records[idx]["meta"])} for idx in winners]
     diagnostics = None
-    if rerank:
+    if rerank and passages:
         with capture_scores(selected_backend) as scored:
             # Two-argument legacy calls remain patchable by existing callers/tests.
             if selected_backend == "llm":
