@@ -66,6 +66,7 @@ def run_index(*, force_reembed: bool = False):
     audit = {
         "indexed_at_utc": now(), "files": manifest,
         "embedding_model": os.getenv("EMBEDDING_MODEL", "embeddinggemma"),
+        "embedding_revision": os.getenv("EMBEDDING_REVISION", ""),
         "retrieval_mode": os.getenv("RETRIEVAL_MODE", "hybrid"),
         "warnings": warnings,
     }
@@ -82,6 +83,8 @@ def check_manifest():
     manifest = load_json(STATE / "manifest.json")
     if manifest["embedding_model"] != os.getenv("EMBEDDING_MODEL", "embeddinggemma"):
         raise RuntimeError("Embedding model changed; rebuild index")
+    if manifest.get("embedding_revision", "") != os.getenv("EMBEDDING_REVISION", ""):
+        raise RuntimeError("Embedding revision changed; rebuild index")
     indexed_names = {f"{x['kind']}/{safe_filename(x['source'].split('/', 1)[1]).casefold()}" for x in manifest["files"]}
     current_names = {
         f"{kind}/{safe_filename(p.name).casefold()}"

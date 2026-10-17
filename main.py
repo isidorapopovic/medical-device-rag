@@ -28,6 +28,8 @@ def main():
     rerank_options.add_argument("--rerank-backend", "--reranker", choices=["none", "llm", "cross_encoder"],
                                 help="Select a local reranker backend (before the command)")
     subs = parser.add_subparsers(dest="command", required=True)
+    from mdr_rag.retrieval_cli import add_commands as add_retrieval_commands
+    add_retrieval_commands(subs)
     subs.add_parser("inspect", help="List files and readable PDF pages")
     locate = subs.add_parser("locate", help="Find text to identify PDF page ranges")
     locate.add_argument("phrase", help='For example: "ANNEX I"')
@@ -157,6 +159,9 @@ def main():
                     status=document.extraction.status, manifest_sha256=manifest_hash,
                     source_span_ids=[span.id for span in document.spans],
                     diagnostics=document.extraction.diagnostics), ensure_ascii=False, indent=2))
+        elif args.command in {"retrieval-index", "retrieve"}:
+            from mdr_rag.retrieval_cli import run as run_retrieval
+            run_retrieval(args)
         elif args.command == "ask":
             run_ask(args.question)
         elif args.command == "extract":

@@ -118,6 +118,7 @@ def configuration(k: int) -> dict:
             "reranker_prompt_hash": fingerprint(inspect.getsource(search._llm_rerank)), "multi_query_enabled": enabled == "true", "query_planner": planner,
             "planner_hash": fingerprint([PLANNER_RULES, inspect.getsource(plan_queries)]), "k": k, "retrieval_mode": mode, "rerank_enabled": reranking_enabled(),
             "llm_model": model, "embedding_model": embedding,
+            "embedding_revision": os.getenv("EMBEDDING_REVISION", ""),
             "num_ctx": ollama_num_ctx(), "ollama_gpu_layers": ollama_gpu_layers(), "reranker_backend": backend, "reranker_identity": identity,
             "cross_encoder_cache": str(cache_folder()), "extraction_version": EXTRACTION_VERSION,
             "query_version": QUERY_VERSION, "retrieval_version": RETRIEVAL_VERSION,
@@ -130,7 +131,7 @@ def corpus_hash(manifest: dict) -> str:
     # Index timestamps are not dependencies; source hashes and extraction identity are.
     return fingerprint({"files": sorted(manifest["files"], key=lambda item: item["source"]),
                         "embedding_model": manifest["embedding_model"],
-                        "extraction_version": EXTRACTION_VERSION})
+                        "extraction_version": EXTRACTION_VERSION} | ({"embedding_revision": manifest["embedding_revision"]} if manifest.get("embedding_revision") else {}))
 
 
 def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, config: dict) -> Dependencies:
@@ -145,7 +146,7 @@ def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, con
                if config["query_planner"] == "llm" else {})),
         retrieval=fingerprint({key: config[key] for key in (
             "k", "retrieval_mode", "embedding_model", "reranker_backend", "retrieval_version",
-            "retrieval_per_query", "retrieval_max_candidates", "reranker_identity", "retrieval_pool_policy")} | ({"gpu_layers": config["ollama_gpu_layers"]} if config.get("ollama_gpu_layers") is not None else {})
+            "retrieval_per_query", "retrieval_max_candidates", "reranker_identity", "retrieval_pool_policy")} | ({"embedding_revision": config["embedding_revision"]} if config.get("embedding_revision") else {}) | ({"gpu_layers": config["ollama_gpu_layers"]} if config.get("ollama_gpu_layers") is not None else {})
             | ({"reranker_model": config["llm_model"], "num_ctx": config["num_ctx"],
                 "reranker_prompt": fingerprint(inspect.getsource(search._llm_rerank))}
                if config["reranker_backend"] == "llm" else {})),

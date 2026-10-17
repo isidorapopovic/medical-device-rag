@@ -86,6 +86,10 @@ def library_versions():
     return result
 
 
+class RerankerUnavailable(RuntimeError):
+    """Optional local weights/dependencies are unavailable; no network fallback."""
+
+
 def local_snapshot(settings):
     provisioned = provisioned_folder(settings)
     marker = provisioned / "provision.json"
@@ -99,12 +103,12 @@ def local_snapshot(settings):
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
-        raise RuntimeError("Cross-encoder dependencies unavailable. Install requirements-rerank.txt; no backend was substituted.") from exc
+        raise RerankerUnavailable("Cross-encoder dependencies unavailable. Install requirements-rerank.txt; no backend was substituted.") from exc
     try:
         return Path(snapshot_download(settings["model"], revision=settings["revision"],
                                       cache_dir=str(cache_folder()), local_files_only=True, token=False))
     except Exception as exc:
-        raise RuntimeError("Pinned cross-encoder model is not cached. Download the documented revision explicitly into CROSS_ENCODER_CACHE, then retry; no backend was substituted.") from exc
+        raise RerankerUnavailable("Pinned cross-encoder model is not cached. Download the documented revision explicitly into CROSS_ENCODER_CACHE, then retry; no backend was substituted.") from exc
 
 
 @lru_cache(maxsize=4)
@@ -130,7 +134,7 @@ def reranker_identity(backend):
     settings = cross_encoder_settings()
     libraries = library_versions()
     if any(libraries[name] == "unavailable" for name in ("sentence-transformers", "torch", "transformers")):
-        raise RuntimeError("Cross-encoder dependencies unavailable. Install requirements-rerank.txt; no backend was substituted.")
+        raise RerankerUnavailable("Cross-encoder dependencies unavailable. Install requirements-rerank.txt; no backend was substituted.")
     snapshot = local_snapshot(settings)
     # Fingerprint both weights and tokenizer/config, rather than trusting a tag.
     names = ("model.safetensors", "config.json", "tokenizer.json", "tokenizer_config.json",

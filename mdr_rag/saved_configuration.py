@@ -5,7 +5,7 @@ from contextlib import contextmanager
 ENV_FIELDS = {
     "ollama_gpu_layers": "OLLAMA_NUM_GPU",
     "retrieval_mode": "RETRIEVAL_MODE", "llm_model": "OLLAMA_LLM_MODEL",
-    "embedding_model": "EMBEDDING_MODEL", "num_ctx": "OLLAMA_NUM_CTX",
+    "embedding_model": "EMBEDDING_MODEL", "embedding_revision": "EMBEDDING_REVISION", "num_ctx": "OLLAMA_NUM_CTX",
     "multi_query_enabled": "MULTI_QUERY_ENABLED", "query_planner": "QUERY_PLANNER",
     "multi_query_max": "MULTI_QUERY_MAX", "retrieval_per_query": "RETRIEVAL_PER_QUERY",
     "retrieval_max_candidates": "RETRIEVAL_MAX_CANDIDATES", "reranker_backend": "RERANK_BACKEND",
@@ -20,6 +20,7 @@ def environment(config):
         if key in config:
             value = config[key]
             result[name] = str(value).lower() if isinstance(value, bool) else str(value) if value is not None else ""
+    result["EMBEDDING_REVISION"] = str(config.get("embedding_revision", ""))
     backend = config.get("reranker_backend", "none")
     result["RERANK_ENABLED"] = "false" if backend == "none" else "true"
     identity = config.get("reranker_identity", {})

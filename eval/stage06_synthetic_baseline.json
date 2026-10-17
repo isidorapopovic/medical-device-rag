@@ -1,0 +1,224 @@
+{
+  "synthetic_demonstration_only": true,
+  "fixture_sha256": "8ff1b956ca73ed01a1343aa5f6e44efddfc33c959953cb12763e1be4bc51f029",
+  "chunks": 1016,
+  "bm25": {
+    "cases": [
+      {
+        "case_id": "exact",
+        "slice": "clause",
+        "ids": [
+          "clause"
+        ],
+        "milliseconds": 15.75930044054985,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "abbreviation",
+        "slice": "abbreviation",
+        "ids": [
+          "abbr"
+        ],
+        "milliseconds": 7.210498675704002,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "unicode",
+        "slice": "multilingual",
+        "ids": [
+          "unicode"
+        ],
+        "milliseconds": 8.149901404976845,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "negation",
+        "slice": "negation",
+        "ids": [
+          "negative"
+        ],
+        "milliseconds": 7.007300853729248,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "table",
+        "slice": "table",
+        "ids": [
+          "table"
+        ],
+        "milliseconds": 6.690900772809982,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "stuffing",
+        "slice": "adversarial",
+        "ids": [
+          "clause",
+          "stuff",
+          "negative"
+        ],
+        "milliseconds": 7.235299795866013,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "no-match",
+        "slice": "unanswerable",
+        "ids": [],
+        "milliseconds": 6.700500845909119,
+        "zero_match": true,
+        "at5": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        },
+        "at10": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        }
+      }
+    ],
+    "overall": {
+      "recall@5": 1.0,
+      "mrr@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "mrr@10": 1.0,
+      "ndcg@10": 1.0,
+      "latency_mean_ms": 8.393386112792152,
+      "zero_match_rate": 0.14285714285714285
+    },
+    "slices": {
+      "abbreviation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 7.210498675704002,
+        "zero_match_rate": 0.0
+      },
+      "adversarial": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 7.235299795866013,
+        "zero_match_rate": 0.0
+      },
+      "clause": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 15.75930044054985,
+        "zero_match_rate": 0.0
+      },
+      "multilingual": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 8.149901404976845,
+        "zero_match_rate": 0.0
+      },
+      "negation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 7.007300853729248,
+        "zero_match_rate": 0.0
+      },
+      "table": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 6.690900772809982,
+        "zero_match_rate": 0.0
+      },
+      "unanswerable": {
+        "recall@5": null,
+        "mrr@5": null,
+        "ndcg@5": null,
+        "recall@10": null,
+        "mrr@10": null,
+        "ndcg@10": null,
+        "latency_mean_ms": 6.700500845909119,
+        "zero_match_rate": 1.0
+      }
+    }
+  }
+}

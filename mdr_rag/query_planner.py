@@ -1,6 +1,7 @@
 """Bounded, source-constrained retrieval intents; never legal conclusions."""
 import re
 from pydantic import BaseModel, ConfigDict, Field
+from .errors import Cancelled
 
 
 class PlannedQuery(BaseModel):
@@ -39,6 +40,8 @@ def plan_queries(requirement, profile=None, *, maximum=4, llm=None):
     original = f"{requirement.provision} {requirement.requirement} {requirement.exact_quote}"
     # Every substantive term comes from the obligation. Added words name search
     # intents, not assumed requirements or asserted evidence.
+    if len(original) > 3500:
+        raise ValueError("Requirement query character budget exceeded")
     topic = " ".join(requirement.requirement.split())
     artifacts = re.findall(r"\b(?:[\w-]+\s+){0,3}(?:records?|reports?|files?|plans?|documentation|analysis|evaluation)\b", topic, re.I)
     menu = [PlannedQuery(id="Q1", intent="original", text=original),
@@ -47,6 +50,8 @@ def plan_queries(requirement, profile=None, *, maximum=4, llm=None):
     facts = profile or {}
     qualifier = " ".join(str(facts.get(key) or "") for key in ("device_name", "intended_purpose"))
     menu.append(PlannedQuery(id="Q4", intent="qualifier", text=topic + " " + qualifier if qualifier.strip() else topic))
+    if any(len(q.text) > 4000 for q in menu) or sum(len(q.text) for q in menu) > 12000:
+        raise ValueError("Query planner character budget exceeded")
     selected, fallback, planner = menu[1:], None, "deterministic"
     if llm is not None and maximum > 1:
         try:
@@ -57,7 +62,7 @@ def plan_queries(requirement, profile=None, *, maximum=4, llm=None):
                 raise ValueError("Unknown intent")
             selected = [allowed[key] for key in choice.selected_ids]
             planner = "llm_selection"
-        except PlannerPersistenceError:
+        except (Cancelled, PlannerPersistenceError):
             raise
         except Exception:
             fallback = "invalid_or_failed_llm_selection"

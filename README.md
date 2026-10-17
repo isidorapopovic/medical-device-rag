@@ -914,3 +914,93 @@ Offline checks:
 python -m pytest -q tests/test_applicability_engine.py -p no:cacheprovider
 python -m pytest -q -p no:cacheprovider
 ```
+
+## Stage 06 structural retrieval (explicit opt-in)
+
+Existing `ask`, `review`, BM25/dense/hybrid RRF and reranker flags keep their defaults.
+No held-out expert dataset is available here, so structural retrieval has **not**
+been promoted into the assessment workflow. No accuracy gains are claimed.
+
+Build a separate immutable structural snapshot from source manifests returned by
+`ingest`. Repeat `--manifest` to select multiple documents of the same project
+and legal/device collection. This does not replace the existing vector index.
+
+```powershell
+python main.py retrieval-index --manifest MANIFEST_SHA256 --kind device --project-id local
+# Copy the returned snapshot hash:
+python main.py retrieve "EMC immunity" --snapshot SNAPSHOT_SHA256 --project-id local
+python main.py retrieve "EMC immunity" --snapshot SNAPSHOT_SHA256 --expand
+# Explicit local model operations, only if desired and already provisioned:
+python main.py retrieval-index --manifest MANIFEST_SHA256 --kind device --dense
+python main.py retrieve "EMC immunity" --snapshot SNAPSHOT_SHA256 --mode hybrid --backend cross_encoder
+# One optional local selection from fixed aliases; never generates evidence:
+python main.py retrieve "EMC immunity" --snapshot SNAPSHOT_SHA256 --expand --assist
+```
+
+BM25 indexing/retrieval needs no running model or downloaded weights. The new
+path uses BM25Plus with zero delta to avoid negative IDF suppressing literal hits
+in tiny corpora; legacy BM25Okapi remains unchanged. Scores remain rankings,
+never probabilities or proof of relevance. Literal structural headings,
+numbered clauses, paragraphs and table rows nominate exact canonical parent
+spans. Existing extraction spans, IDs, offsets and source-view contracts remain
+unchanged. A long atomic paragraph/cell is retained rather than cut blindly.
+Children cannot repair tables/clauses already split during extraction, and PDF
+table reading order remains unverified.
+
+Snapshots live under ignored `state/retrieval/<project hash>/`; optional Chroma
+collections are scoped by the complete snapshot hash, document revisions,
+embedding model and declared revision. `EMBEDDING_REVISION` is an optional
+user-supplied weight identity, also bound to legacy vector reuse, assessment
+dependencies, saved configuration and relevance calibration. Change it when
+weights change, or use the existing `index --force-reembed` for mutable tags;
+the application cannot independently discover silent model-weight changes.
+
+Retrieval checks immutable originals and snapshot/child provenance before
+search. The CLI also checks selected current working files under
+`--documents-root` (default `documents`): changed or deleted files fail closed.
+The Python API permits an explicitly historical archived snapshot when no
+working root is supplied. Selection is a frozen subset; newly added documents
+require a new snapshot. An index never establishes verified legal applicability.
+
+Up to four queries, 4,000 characters per query, 12,000 total characters,
+12 candidates per backend/query and 30 fused candidates are allowed. Expansion
+accepts at most 3,500 characters, retains the original query, uses fixed
+search-only aliases (including a negative wording alias) and caches up to 64
+plans in process by snapshot/query/model/settings. Unknown terms remain a
+single query. With `--assist`, one bounded structured local call selects menu
+IDs; existing run budgets/timeouts/transient retry rules apply. Invalid output
+or an unavailable provider preserves lexical expansion; cancellation propagates.
+
+Unavailable dense inference/indexes fall back to the verified lexical snapshot;
+unavailable/timed-out rerankers preserve fused order. Recoveries have fixed codes.
+Invalid schemas/citations, changed source hashes and cancellation are errors.
+Native CPU inference cannot be forcibly interrupted: late results are discarded
+under the existing cooperative deadline contract. Missing optional weights are
+never downloaded during retrieval. The API's `resilient=True` enables these
+policies; old direct calls preserve their prior failure behavior.
+
+Outputs contain child-to-parent mappings, source revisions, query timings and
+fallback codes. Canonical parent candidates remain `not_assessed` /
+`candidates_require_verification`. No lexical match returns
+`no_relevant_evidence` and `INSUFFICIENT_EVIDENCE`, never noncompliance.
+No new threshold was calibrated without labels. Existing assessment evidence
+gating still requires matching human calibration and does not reuse thresholds
+across declared embedding revisions. Do not treat raw `retrieve` candidates as
+accepted evidence.
+
+Offline checks (after activating the project environment):
+
+```powershell
+python -m pytest -q tests/test_stage06_retrieval.py -p no:cacheprovider
+python -m mdr_rag.retrieval_benchmark --out reports/stage06/reproduced.json
+```
+
+The benchmark runs all seven frozen **synthetic, non-regulatory** cases over
+1,016 chunks, including an unanswerable query. It compares unchanged BM25,
+structural BM25 and lexical expansion, reporting Recall@5/10, MRR, nDCG,
+latencies, slices, zero-match rate and zero cloud calls. Fixtures and measured
+artifacts are under `eval/stage06_synthetic_*.json`; see
+[Stage 06 measurements](docs/implementation/RETRIEVAL_STAGE06.md).
+Real dense/RRF/LLM/cross-encoder quality comparisons, expert held-out threshold
+validation and any default promotion remain NOT RUN pending authentic labels.
+Synthetic metrics must never serve as regulatory release evidence.

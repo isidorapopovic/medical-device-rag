@@ -1,6 +1,6 @@
 # Implementation progress
 
-**Current stage: STAGE_05=PASS**
+**Current stage: STAGE_06=PASS**
 
 **STAGE_01=PASS** - final measured result below supersedes intermediate statuses.
 
@@ -283,3 +283,91 @@ Rollback: revert only the Stage 05 commit to 195294d; preserve state/applicabili
 
 Commit: explicitly authorized by the user on feat/stage-01-foundations-telemetry. Subject: Implement Stage 05 sourced applicability rules and specialist review. No push/deployment.
 Next stage: `docs/day_two_prompts/stages/06_RETRIEVAL_AND_RERANKING.md`. STOP after this stage and the requested same-branch commit.
+
+
+## Stage 06 execution plan (2026-10-17)
+
+Status: IN_PROGRESS. Baseline: 7699e40, clean feat/stage-01-foundations-telemetry. Read full Stage 06/reference specs, day_two_prompts/AGENTS.md (no root AGENTS.md), README, main/Streamlit, ingestion/parser, search/query planner/reranking/evidence gate and relevant tests/config. Existing hybrid/RRF, 4-query planner, optional pinned CPU scorer, calibrated evidence gate and immutable ingestion are retained. eval/gold_queries.json is empty; examples explicitly are not human calibration.
+
+Plan: (1) freeze a clearly synthetic regression fixture and measure existing BM25 baseline before changes; (2) add optional structural child indexes with canonical parent citations and project/document/model revision identity, bounded cached expansion and explicit retrieval fallback diagnostics; (3) exercise stale/deleted/duplicate sources, no evidence, failure paths and 1000+ chunks offline; (4) record comparative fixture metrics, run focused/full checks, inspect diff and commit on the current branch. Existing retrieval defaults stay unchanged without held-out expert evidence. No network/models/dependency installs or user index rebuild. Expert benchmark/calibration remains NOT RUN pending authentic labels, never replaced by synthetic claims.
+
+## Final Stage 06 gate (2026-10-17)
+
+**STAGE_06=PASS — implementation/offline gate.** Expert relevance calibration,
+real-model comparative quality and default promotion remain NOT RUN / not approved.
+Existing hybrid defaults remain unchanged. Stage 07 is not started.
+
+Implemented: optional content-addressed project/corpus/document/extraction/model/revision
+structural child indexes; exact canonical parent return/SourceBuffer recording; dedicated optional
+Chroma collections; BM25Plus(delta=0) only for the opt-in resilient path; bounded cached search aliases
+with one optional structured local selection; lexical and fusion fallback codes; model-revision
+bindings in existing indexes, saved config, assessment dependencies and evidence calibration;
+query/candidate/character caps, source/version inventory checks and redacted retrieval telemetry.
+No definitive classification/conformity or relevance confidence is produced.
+
+Changed files:
+- main.py and new mdr_rag/retrieval_cli.py: two explicit commands; all existing commands retained.
+- New mdr_rag/structural_retrieval.py, retrieval_safety.py, query_expansion.py and retrieval_benchmark.py.
+- mdr_rag/search.py, pipeline.py, query_planner.py, reranking.py: scoped extensions preserving legacy defaults.
+- mdr_rag/settings.py, saved_configuration.py, review_state.py, evidence_gate.py, telemetry.py and .env.example: revision/config/logging contracts.
+- New tests/test_stage06_retrieval.py (51 deterministic tests), two eval/stage06_synthetic_*.json artifacts,
+  README and implementation progress/decisions/RETRIEVAL_STAGE06.md.
+
+Measured checks:
+| Command/check | Result |
+|---|---|
+| Pre-change retrieval/reranker focused suite | PASS: 59 passed, 1 optional model skipped, 8.58s |
+| Intermediate retrieval/reranker/ingestion compatibility suite | PASS: 124 passed, 1 skipped, 13.57s |
+| Initial new Stage 06 suite | PASS: 39 passed, 3.81s |
+| Expanded new Stage 06 suite | PASS: 50 passed, 3.14s |
+| Intermediate full suite before standalone scope fix | PASS: 716 passed, 1 skipped, 149.58s; superseded |
+| Final focused: python -m pytest -q tests/test_stage06_retrieval.py tests/test_query_retrieval.py -p no:cacheprovider | PASS: 78 passed (51 new + 27 existing), 8.25s |
+| Final full: python -m pytest -q -p no:cacheprovider | PASS: 717 passed, 1 optional real-model skipped, 144.44s |
+| python -m compileall -q main.py mdr_rag tests/test_stage06_retrieval.py | PASS on final production source |
+| AST parse of main/module files and new test | PASS: 55 files |
+| python main.py retrieval-index --help; python main.py retrieve --help | PASS, no models |
+| python -m mdr_rag.retrieval_benchmark --out reports/stage06/comparison-final.json | PASS; all seven fixed synthetic cases, matching baseline fixture hash |
+| git diff --check; reviewed changed/new files and fixture/key markers | PASS |
+| Ruff/Black/mypy | NOT RUN: none installed/configured; no tool/dependency installation |
+| Real dense/LLM/cross-encoder quality/inference, OCR/browser, expert held-out labels/calibration | NOT RUN; synthetic vectors test local Chroma mechanics only |
+
+All Python checks used .venv/Scripts/python.exe. Tests cover exact clauses, abbreviations,
+multilingual text, negation, table boundaries, long atomic text, literal no-match abstention,
+keyword stuffing, 1,016 chunks, duplicate/current/versioned sources, cross-project/corpus isolation,
+archive/index tampering, missing dense resources, deterministic local Chroma, unavailable/timed-out
+models/rerankers, schema failures, cancellation, shared budget exhaustion, failed publication,
+Windows labels, CLI flow, revision-bound cache/config/calibration and fixed-code private logs.
+
+Final review found a standalone programmatic budget boundary: CLI calls already shared a run, but
+multiple batches through the new API needed a lazy outer scope. Added scopes to structural build/
+retrieve and shared candidate retrieval plus a regression proving only one operation executes
+under a one-call budget across multiple batches, with no partial index publication. The final
+focused and 717-test full suite include this fix. No existing test was weakened/deleted.
+
+Synthetic measurements: baseline 8.39 ms mean; final legacy BM25 11.25 ms; structural 27.77 ms;
+expanded structural 22.26 ms. All three final paths and baseline Recall@5/10, MRR and nDCG are 1.00
+on six literal answerable illustrations; the seventh unmatched case is retained, zero-match 1/7.
+Final p95 values: 22.66 / 62.38 / 23.11 ms. In-memory scoring only, small/noisy and concurrent with
+the suite; no performance/quality gains claimed. Artifacts and per-slice results are tracked.
+No authentic expert gold was available; no threshold was fabricated or promoted.
+
+Compatibility/risks: existing source spans, legal authority and assessment output contracts remain
+canonical; the new commands return candidates requiring verification, not accepted evidence.
+Existing empty revision configs remain loadable. Explicit EMBEDDING_REVISION binds new vectors/
+config/calibration; mutable model-tag changes remain operator-managed. Literal boundaries cannot
+repair pre-existing extraction cuts/PDF table ambiguity. Atomic oversized paragraphs remain whole.
+CLI checks selected working files; historical API use is explicit and newly added documents need
+a new snapshot. No cross-store transaction or concurrent builder guarantee; failed late publication
+may retain unreachable immutable artifacts. Snapshot verification adds IO. Native CPU calls use
+cooperative deadlines/late-result rejection, not a hard-kill process boundary. See detailed report.
+
+Costs: 0 live model/cloud calls, $0 cloud spend, no model/download/network/legal fetch, dependency
+changes, user dossier/index rebuild, push or deployment. Optional inference shares existing durable
+budgets/timeouts/retries and never downloads weights implicitly. Model quality/latency NOT RUN.
+
+Rollback: revert only this Stage 06 commit to 7699e40 and preserve all source/assessment/profile/
+registry/applicability/retrieval archives. Restore prior explicit embedding settings for prior vectors;
+keep this reader or export new-configuration reports first. No data deletion was performed.
+
+Commit explicitly authorized by the user on feat/stage-01-foundations-telemetry.
+Next: docs/day_two_prompts/stages/07_EVIDENCE_AND_CITATION_AUDIT.md. STOP after requested commit.

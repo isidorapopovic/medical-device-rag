@@ -1,0 +1,717 @@
+{
+  "structural_bm25": {
+    "cases": [
+      {
+        "case_id": "exact",
+        "slice": "clause",
+        "ids": [
+          "clause"
+        ],
+        "milliseconds": 23.753300309181213,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "abbreviation",
+        "slice": "abbreviation",
+        "ids": [
+          "abbr"
+        ],
+        "milliseconds": 21.658198907971382,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "unicode",
+        "slice": "multilingual",
+        "ids": [
+          "unicode"
+        ],
+        "milliseconds": 21.826298907399178,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "negation",
+        "slice": "negation",
+        "ids": [
+          "negative"
+        ],
+        "milliseconds": 21.902499720454216,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "table",
+        "slice": "table",
+        "ids": [
+          "table"
+        ],
+        "milliseconds": 21.17460034787655,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "stuffing",
+        "slice": "adversarial",
+        "ids": [
+          "clause",
+          "stuff",
+          "negative"
+        ],
+        "milliseconds": 21.663999184966087,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "no-match",
+        "slice": "unanswerable",
+        "ids": [],
+        "milliseconds": 62.383800745010376,
+        "zero_match": true,
+        "at5": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        },
+        "at10": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        }
+      }
+    ],
+    "overall": {
+      "recall@5": 1.0,
+      "mrr@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "mrr@10": 1.0,
+      "ndcg@10": 1.0,
+      "latency_mean_ms": 27.766099731837,
+      "latency_median_ms": 21.826298907399178,
+      "latency_p95_ms": 62.383800745010376,
+      "zero_match_rate": 0.14285714285714285
+    },
+    "slices": {
+      "abbreviation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.658198907971382,
+        "latency_median_ms": 21.658198907971382,
+        "latency_p95_ms": 21.658198907971382,
+        "zero_match_rate": 0.0
+      },
+      "adversarial": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.663999184966087,
+        "latency_median_ms": 21.663999184966087,
+        "latency_p95_ms": 21.663999184966087,
+        "zero_match_rate": 0.0
+      },
+      "clause": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 23.753300309181213,
+        "latency_median_ms": 23.753300309181213,
+        "latency_p95_ms": 23.753300309181213,
+        "zero_match_rate": 0.0
+      },
+      "multilingual": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.826298907399178,
+        "latency_median_ms": 21.826298907399178,
+        "latency_p95_ms": 21.826298907399178,
+        "zero_match_rate": 0.0
+      },
+      "negation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.902499720454216,
+        "latency_median_ms": 21.902499720454216,
+        "latency_p95_ms": 21.902499720454216,
+        "zero_match_rate": 0.0
+      },
+      "table": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.17460034787655,
+        "latency_median_ms": 21.17460034787655,
+        "latency_p95_ms": 21.17460034787655,
+        "zero_match_rate": 0.0
+      },
+      "unanswerable": {
+        "recall@5": null,
+        "mrr@5": null,
+        "ndcg@5": null,
+        "recall@10": null,
+        "mrr@10": null,
+        "ndcg@10": null,
+        "latency_mean_ms": 62.383800745010376,
+        "latency_median_ms": 62.383800745010376,
+        "latency_p95_ms": 62.383800745010376,
+        "zero_match_rate": 1.0
+      }
+    }
+  },
+  "expanded_structural_bm25": {
+    "cases": [
+      {
+        "case_id": "exact",
+        "slice": "clause",
+        "ids": [
+          "clause"
+        ],
+        "milliseconds": 21.11149951815605,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "abbreviation",
+        "slice": "abbreviation",
+        "ids": [
+          "abbr"
+        ],
+        "milliseconds": 22.826099768280983,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "unicode",
+        "slice": "multilingual",
+        "ids": [
+          "unicode"
+        ],
+        "milliseconds": 21.90759964287281,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "negation",
+        "slice": "negation",
+        "ids": [
+          "negative"
+        ],
+        "milliseconds": 21.634601056575775,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "table",
+        "slice": "table",
+        "ids": [
+          "table"
+        ],
+        "milliseconds": 22.84879982471466,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "stuffing",
+        "slice": "adversarial",
+        "ids": [
+          "clause",
+          "stuff",
+          "negative"
+        ],
+        "milliseconds": 22.399598732590675,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "no-match",
+        "slice": "unanswerable",
+        "ids": [],
+        "milliseconds": 23.114800453186035,
+        "zero_match": true,
+        "at5": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        },
+        "at10": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        }
+      }
+    ],
+    "overall": {
+      "recall@5": 1.0,
+      "mrr@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "mrr@10": 1.0,
+      "ndcg@10": 1.0,
+      "latency_mean_ms": 22.263285570911,
+      "latency_median_ms": 22.399598732590675,
+      "latency_p95_ms": 23.114800453186035,
+      "zero_match_rate": 0.14285714285714285
+    },
+    "slices": {
+      "abbreviation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 22.826099768280983,
+        "latency_median_ms": 22.826099768280983,
+        "latency_p95_ms": 22.826099768280983,
+        "zero_match_rate": 0.0
+      },
+      "adversarial": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 22.399598732590675,
+        "latency_median_ms": 22.399598732590675,
+        "latency_p95_ms": 22.399598732590675,
+        "zero_match_rate": 0.0
+      },
+      "clause": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.11149951815605,
+        "latency_median_ms": 21.11149951815605,
+        "latency_p95_ms": 21.11149951815605,
+        "zero_match_rate": 0.0
+      },
+      "multilingual": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.90759964287281,
+        "latency_median_ms": 21.90759964287281,
+        "latency_p95_ms": 21.90759964287281,
+        "zero_match_rate": 0.0
+      },
+      "negation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 21.634601056575775,
+        "latency_median_ms": 21.634601056575775,
+        "latency_p95_ms": 21.634601056575775,
+        "zero_match_rate": 0.0
+      },
+      "table": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 22.84879982471466,
+        "latency_median_ms": 22.84879982471466,
+        "latency_p95_ms": 22.84879982471466,
+        "zero_match_rate": 0.0
+      },
+      "unanswerable": {
+        "recall@5": null,
+        "mrr@5": null,
+        "ndcg@5": null,
+        "recall@10": null,
+        "mrr@10": null,
+        "ndcg@10": null,
+        "latency_mean_ms": 23.114800453186035,
+        "latency_median_ms": 23.114800453186035,
+        "latency_p95_ms": 23.114800453186035,
+        "zero_match_rate": 1.0
+      }
+    }
+  },
+  "synthetic_demonstration_only": true,
+  "expert_validated": false,
+  "fixture_sha256": "8ff1b956ca73ed01a1343aa5f6e44efddfc33c959953cb12763e1be4bc51f029",
+  "chunks": 1016,
+  "bm25": {
+    "cases": [
+      {
+        "case_id": "exact",
+        "slice": "clause",
+        "ids": [
+          "clause"
+        ],
+        "milliseconds": 22.661399096250534,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "abbreviation",
+        "slice": "abbreviation",
+        "ids": [
+          "abbr"
+        ],
+        "milliseconds": 9.644899517297745,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "unicode",
+        "slice": "multilingual",
+        "ids": [
+          "unicode"
+        ],
+        "milliseconds": 9.572900831699371,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "negation",
+        "slice": "negation",
+        "ids": [
+          "negative"
+        ],
+        "milliseconds": 9.310198947787285,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "table",
+        "slice": "table",
+        "ids": [
+          "table"
+        ],
+        "milliseconds": 9.432900696992874,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "stuffing",
+        "slice": "adversarial",
+        "ids": [
+          "clause",
+          "stuff",
+          "negative"
+        ],
+        "milliseconds": 9.707998484373093,
+        "zero_match": false,
+        "at5": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        },
+        "at10": {
+          "recall": 1.0,
+          "mrr": 1.0,
+          "ndcg": 1.0
+        }
+      },
+      {
+        "case_id": "no-match",
+        "slice": "unanswerable",
+        "ids": [],
+        "milliseconds": 8.440500125288963,
+        "zero_match": true,
+        "at5": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        },
+        "at10": {
+          "recall": null,
+          "mrr": null,
+          "ndcg": null
+        }
+      }
+    ],
+    "overall": {
+      "recall@5": 1.0,
+      "mrr@5": 1.0,
+      "ndcg@5": 1.0,
+      "recall@10": 1.0,
+      "mrr@10": 1.0,
+      "ndcg@10": 1.0,
+      "latency_mean_ms": 11.252971099955696,
+      "latency_median_ms": 9.572900831699371,
+      "latency_p95_ms": 22.661399096250534,
+      "zero_match_rate": 0.14285714285714285
+    },
+    "slices": {
+      "abbreviation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 9.644899517297745,
+        "latency_median_ms": 9.644899517297745,
+        "latency_p95_ms": 9.644899517297745,
+        "zero_match_rate": 0.0
+      },
+      "adversarial": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 9.707998484373093,
+        "latency_median_ms": 9.707998484373093,
+        "latency_p95_ms": 9.707998484373093,
+        "zero_match_rate": 0.0
+      },
+      "clause": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 22.661399096250534,
+        "latency_median_ms": 22.661399096250534,
+        "latency_p95_ms": 22.661399096250534,
+        "zero_match_rate": 0.0
+      },
+      "multilingual": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 9.572900831699371,
+        "latency_median_ms": 9.572900831699371,
+        "latency_p95_ms": 9.572900831699371,
+        "zero_match_rate": 0.0
+      },
+      "negation": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 9.310198947787285,
+        "latency_median_ms": 9.310198947787285,
+        "latency_p95_ms": 9.310198947787285,
+        "zero_match_rate": 0.0
+      },
+      "table": {
+        "recall@5": 1.0,
+        "mrr@5": 1.0,
+        "ndcg@5": 1.0,
+        "recall@10": 1.0,
+        "mrr@10": 1.0,
+        "ndcg@10": 1.0,
+        "latency_mean_ms": 9.432900696992874,
+        "latency_median_ms": 9.432900696992874,
+        "latency_p95_ms": 9.432900696992874,
+        "zero_match_rate": 0.0
+      },
+      "unanswerable": {
+        "recall@5": null,
+        "mrr@5": null,
+        "ndcg@5": null,
+        "recall@10": null,
+        "mrr@10": null,
+        "ndcg@10": null,
+        "latency_mean_ms": 8.440500125288963,
+        "latency_median_ms": 8.440500125288963,
+        "latency_p95_ms": 8.440500125288963,
+        "zero_match_rate": 1.0
+      }
+    }
+  },
+  "dense": "NOT RUN: no installed-model benchmark",
+  "hybrid": "NOT RUN: no installed-model benchmark",
+  "llm_rerank": "NOT RUN",
+  "cross_encoder": "NOT RUN",
+  "cloud_calls": 0,
+  "default_promotion": false
+}

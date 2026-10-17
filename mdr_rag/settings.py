@@ -19,6 +19,7 @@ class Settings(BaseModel):
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_llm_model: str = "qwen3:4b"
     embedding_model: str = "embeddinggemma"
+    embedding_revision: str = Field(default="", max_length=200)
     ollama_num_ctx: int = Field(default=8192, gt=0)
     ollama_num_gpu: int | None = Field(default=None, ge=0)
     retrieval_mode: Literal["dense", "bm25", "hybrid"] = "hybrid"
@@ -110,7 +111,7 @@ class Settings(BaseModel):
     def safe_dump(self) -> dict:
         """Deliberately exclude paths, arbitrary model IDs, hosts and all credentials."""
         private_fields = {"root", "database_path", "cloud_api_key", "ollama_host", "ollama_llm_model",
-                          "embedding_model", "cross_encoder_cache", "evidence_gate_calibration", "legal_version",
+                          "embedding_model", "embedding_revision", "cross_encoder_cache", "evidence_gate_calibration", "legal_version",
                           "cross_encoder_model", "cross_encoder_revision"}
         return self.model_dump(exclude=private_fields, mode="json")
 
