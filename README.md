@@ -1,6 +1,6 @@
 # Medical Device RAG
 
-The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload and preview); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
+The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing and preview); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
 `rag.py` is a separate, older Gemini prototype retained for reference, not the supported application. It imports `mdr_rag.tls` and `mdr_rag.quota`, which are not present in this checkout, and expects Gemini dependencies and credentials not used by the modular app. Do not use it for the supported workflow; use `main.py` instead. The script is retained in place. It uses the same `vector_db/` directory but a separate collection named `medical_device_rag_<Gemini embedding model with hyphens replaced by underscores>`; the modular app uses `medical_mdr_evidence`. Do not delete, migrate or reuse the legacy collection as an Ollama index.
 
@@ -86,7 +86,7 @@ Expected: CLI help and deterministic foundations tests pass without Ollama, netw
 
 PDF/DOCX/TXT/Markdown ingestion archives originals and immutable extraction manifests under `state/ingestion/<project hash>/`. Files retain their byte SHA-256, document UUID, revision, MIME and extraction/library versions. Identical re-uploads reuse the same revision; changed bytes under the same logical name create a new revision. Each project and legal/device collection has its own logical document identity. Uploaded filenames never select archive paths. Symlink/junction paths, reserved Windows names, MIME mismatches, unsafe DOCX archives and oversized inputs are checked before publication.
 
-Streamlit uploads now archive revisions before updating the latest working file in `documents/legal` or `documents/device`. Original revisions remain in the archive. The legacy low-level `save_uploaded_document` helper still refuses overwrites and intentionally does not parse content; supported UI uploads use the validated ingestion service. The UI remains a local upload/preview tool, not a full assessment workspace.
+Streamlit uploads now archive revisions before updating the latest working file in `documents/legal` or `documents/device`. Original revisions remain in the archive. The legacy low-level `save_uploaded_document` helper still refuses overwrites and intentionally does not parse content; supported UI uploads use the validated ingestion service. The UI provides local upload, indexing and preview; assessment controls remain in the CLI.
 
 Extraction preserves PDF physical pages, DOCX paragraph/table/row/cell order, and TXT/MD block/line locations. Text is normalized once using a named NFC/whitespace policy with a character-to-raw-extraction offset map. Source views show the normalized quote, its raw excerpt and surrounding context, and the original revision's path/page. Offsets refer to Python characters in extracted text, not PDF binary bytes or printed page labels. DOCX/text locations are never called physical pages. Headings are literal structural labels, not inferred regulatory requirements.
 
@@ -274,7 +274,7 @@ Raw offsets count Python characters in **exact indexed passage text**, not PDF b
 
 This is deterministic provenance validation. A real quotation can still be irrelevant or fail to support its associated claim; `raw_spans_checked` is not an independent semantic audit, calibrated confidence or regulatory conclusion.
 
-## Document upload and preview app
+## Document upload, indexing and preview app
 
 Install dependencies and start the local Streamlit interface:
 
@@ -283,7 +283,20 @@ python -m pip install -r requirements.txt
 python -m streamlit run streamlit_app.py --server.address 127.0.0.1
 ```
 
-Choose whether each upload belongs to the legal/regulatory or device collection. The app saves supported PDF, DOCX, TXT and Markdown files in `documents/legal/` or `documents/device/`, lists existing files, and previews extracted text. Uploading does not build the search index; run `python main.py index` after adding documents before querying them. Existing files are never overwritten: rename a new upload if its filename is already present. Each file is limited to 50 MiB. The app has no authentication; bind it to localhost as shown and do not expose it to a network.
+Choose whether each upload belongs to the legal/regulatory or device collection, then click **Save selected files**. The app saves PDF, DOCX, TXT and Markdown files in `documents/legal/` or `documents/device/`, archives original revisions before updating existing filenames, lists files, and previews extracted text. Each upload is limited to 50 MiB. The app has no authentication; bind it to localhost as shown and do not expose it to a network.
+
+In **Documents**, click **Index Documents** to index both folders using the existing local Ollama embedding model and `vector_db/`. Start Ollama and install the embedding model configured in `.env` first (default: `ollama pull embeddinggemma`). Saving files alone never makes them searchable. The status starts at **Not indexed** without a manifest, becomes **Index out of date** after saving, and displays **Ready** only when saved file hashes, archived provenance, embedding model, collection fingerprint and chunk count match. New, removed or changed files and a changed embedding model require indexing again. Existing indexes without a collection fingerprint require one rebuild. Status also shows indexed file/chunk counts, the last indexing time in UTC, the indexed embedding model and extraction warnings. An ordinary Streamlit rerun does not index documents.
+
+Indexing is disabled without readable chunks. A scanned PDF produces an OCR warning; provide a text-readable copy. An unreadable legal source blocks indexing even if other documents contain text, while unreadable device sources are recorded with zero chunks and a warning. If indexing fails, check the model/server, document warnings and disk permissions, then click **Index Documents** again; developer logs contain exception details. `python main.py index` and `python main.py index --force-reembed` remain available and write the same compatible `state/manifest.json`.
+
+Changed embeddings are prepared before publication; Chroma builds a staged collection and retains the previous collection as a backup. Embedding, candidate-write and promotion failures preserve the previous active index. Publication is **not atomic across Chroma renames and the manifest write**: an interruption can leave an absent active collection or a collection/manifest mismatch. Status detects these states and requires a retry, rather than reporting Ready. Successful indexing keeps backups in the same database; it does not delete them automatically. CLI and UI indexing share an exclusive `state/index.lock`; after a crashed writer, verify it has stopped before manually removing a leftover lock.
+
+The offline acceptance test exercises PDF save, stale status, button indexing, Ready after restart, adding a second source, and indexing again with real PDF extraction and temporary Chroma storage; embedding inference is mocked. Run the targeted and complete suites:
+
+```powershell
+.venv/Scripts/python.exe -m pytest -q tests/test_app_services.py tests/test_document_ui.py tests/test_ingestion.py
+.venv/Scripts/python.exe -m pytest -q
+```
 
 ---
 

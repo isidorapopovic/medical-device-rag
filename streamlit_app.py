@@ -2,14 +2,49 @@
 from pathlib import Path
 
 import streamlit as st
+from dotenv import load_dotenv
 
-from mdr_rag.core import DOCS, source_records
+from mdr_rag.core import DOCS, ROOT, source_records
+from mdr_rag.app_services import get_index_status, index_documents
 from mdr_rag.document_ui import SUPPORTED_EXTENSIONS, ingest_uploaded_document
 from mdr_rag.ingestion import confined, extraction_warnings
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 PREVIEW_CHAR_LIMIT = 12_000
 SUPPORTED_TYPES = sorted(extension.lstrip(".") for extension in SUPPORTED_EXTENSIONS)
+load_dotenv(ROOT / ".env")
+
+
+def render_index_controls() -> None:
+    status = get_index_status()
+    if message := st.session_state.pop("index_success", None):
+        st.success(message)
+    label = status.state
+    reason = status.reason
+    if label == "Not indexed" and st.session_state.get("documents_saved"):
+        label = "Index out of date"
+        reason = "Documents were saved and have not been indexed. Click Index Documents."
+    st.subheader(f"Index status: {label}")
+    st.caption(reason)
+    st.caption(
+        f"Last indexed: {status.indexed_at or 'Never'} | Indexed files: {status.file_count} | "
+        f"Chunks: {status.chunk_count} | Embedding model: {status.embedding_model}"
+    )
+    for warning in status.warnings:
+        st.warning(warning)
+    if not status.can_index:
+        st.info("Save at least one readable supported document. Unreadable legal sources must be replaced or OCR processed.")
+    if st.button("Index Documents", disabled=not status.can_index):
+        with st.spinner("Indexing legal and device documents with the local embedding model…"):
+            result = index_documents()
+        if result.success:
+            st.session_state["documents_saved"] = False
+            st.session_state["index_success"] = (
+                f"Indexed {result.status.chunk_count} chunks from {result.status.file_count} files."
+            )
+            st.rerun()
+        else:
+            st.error(result.error)
 
 
 def list_documents(kind: str) -> list[Path]:
@@ -31,7 +66,7 @@ def list_documents(kind: str) -> list[Path]:
 def main() -> None:
     st.set_page_config(page_title="Medical Device RAG", page_icon="📄", layout="wide")
     st.title("Medical Device RAG")
-    st.caption("Upload and preview local legal and device source documents.")
+    st.caption("Upload, index and preview local legal and device source documents.")
     st.info(
         "Files are stored in this project's documents folder. Uploading does not index "
         "them or send them to a model. This app has no authentication; keep it bound to "
@@ -61,16 +96,20 @@ def main() -> None:
                 except (OSError, ValueError) as exc:
                     st.error(f"{upload.name}: {exc}")
                 else:
+                    st.session_state["documents_saved"] = True
                     st.success(f"Saved {saved_path.relative_to(DOCS)}")
+                    st.caption("Saved documents require indexing before they are searchable.")
                     st.caption(f"Archived revision {ingested.document.version}; status: {ingested.extraction.status}; manifest: {manifest_hash}")
                     for warning in extraction_warnings(ingested):
                         st.warning(warning)
 
+    st.header("Documents")
     legal_documents = list_documents("legal")
     device_documents = list_documents("device")
     summary_left, summary_right = st.columns(2)
     summary_left.metric("Legal / regulatory files", len(legal_documents))
     summary_right.metric("Device files", len(device_documents))
+    render_index_controls()
 
     category = st.selectbox(
         "Browse category",

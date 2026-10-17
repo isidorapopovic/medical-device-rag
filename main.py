@@ -9,7 +9,7 @@ from mdr_rag.runtime import managed_run
 
 load_dotenv(ROOT / ".env")
 from mdr_rag.pipeline import (  # noqa: E402
-    extract_requirements, inspect_files, run_ask, run_index, run_review
+    extract_requirements, inspect_files, run_ask, run_index, run_review, print_index_result
 )
 
 
@@ -112,7 +112,8 @@ def main():
         elif args.command == "locate":
             inspect_files(args.phrase)
         elif args.command == "index":
-            run_index(force_reembed=True) if args.force_reembed else run_index()
+            audit = run_index(force_reembed=True) if args.force_reembed else run_index()
+            print_index_result(audit)
         elif args.command in {"ingest", "source-view"}:
             import json
             from pathlib import Path

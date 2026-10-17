@@ -62,6 +62,12 @@ def inspect_files(search_term: str | None = None):
 
 @managed_run
 def run_index(*, force_reembed: bool = False):
+    from .report_state import exclusive_lock
+    with exclusive_lock(STATE / "index.lock"):
+        return _index_audit(force_reembed=force_reembed)
+
+
+def _index_audit(*, force_reembed: bool = False) -> dict:
     warnings, manifest = rebuild_index(force_reembed=True) if force_reembed else rebuild_index()
     audit = {
         "indexed_at_utc": now(), "files": manifest,
@@ -70,6 +76,12 @@ def run_index(*, force_reembed: bool = False):
         "warnings": warnings,
     }
     save_json(STATE / "manifest.json", audit)
+    return audit
+
+
+def print_index_result(audit: dict) -> None:
+    """CLI presentation; callers of run_index receive the reusable audit."""
+    manifest, warnings = audit["files"], audit["warnings"]
     print(f"Indexed {sum(x['chunks'] for x in manifest)} chunks from {len(manifest)} files.")
     for warning in warnings:
         print("WARNING:", warning)

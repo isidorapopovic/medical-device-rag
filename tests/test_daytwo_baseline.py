@@ -16,6 +16,11 @@ def test_legacy_cli_dispatch(monkeypatch, argv):
     calls = []
     for name in ("inspect_files", "run_index", "run_ask", "extract_requirements", "run_review"):
         monkeypatch.setattr(main, name, lambda *a, **kw: calls.append((a, kw)))
+    # Indexing now returns a reusable audit; the CLI prints that result.
+    def index_result(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {"files": [], "warnings": []}
+    monkeypatch.setattr(main, "run_index", index_result)
     monkeypatch.setattr(sys, "argv", ["main.py", *argv])
     assert main.main() == 0
     assert len(calls) == 1

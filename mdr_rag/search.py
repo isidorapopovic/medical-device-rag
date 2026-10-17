@@ -1,6 +1,8 @@
 """Embedding and hybrid (dense + BM25) evidence retrieval."""
 import os
 import re
+import json
+import hashlib
 from uuid import uuid4
 
 import chromadb
@@ -13,6 +15,12 @@ from .source_buffer import ACTIVE_RECORDER
 from .runtime import managed_run
 
 COLLECTION = "medical_mdr_evidence"
+
+
+def index_fingerprint(files: list[dict], model: str) -> str:
+    """Bind a published collection to the exact extraction audit it represents."""
+    payload = json.dumps({"files": files, "embedding_model": model}, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def open_db():
@@ -61,7 +69,8 @@ def rebuild_index(*, force_reembed: bool = False) -> tuple[list[str], list[dict]
     staged_name = COLLECTION + "_stage_" + uuid4().hex
     backup_name = COLLECTION + "_backup_" + uuid4().hex
     c = db.create_collection(name=staged_name, embedding_function=None,
-                             metadata={"embedding_model": model, "project_key": project_key})
+                             metadata={"embedding_model": model, "project_key": project_key,
+                                       "index_fingerprint": index_fingerprint(manifest, model)})
     renamed = False
     try:
         for begin in range(0, len(prepared), 32):
