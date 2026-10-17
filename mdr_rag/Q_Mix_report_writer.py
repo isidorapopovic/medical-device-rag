@@ -58,6 +58,7 @@ def write_markdown(assessment: dict, destination: Path) -> None:
     for row in rows:
         req, f = row["requirement"], row["finding"]
         locations = {p["id"]: p for p in row["retrieved_evidence"]}
+        candidate = (row.get("applicability") or {}).get("candidate_assessment")
         out += [
             f"### {req['id']} — {clean(req['provision'])}", "",
             f"**Requirement (draft):** {clean(req['requirement'])}", "",
@@ -69,6 +70,12 @@ def write_markdown(assessment: dict, destination: Path) -> None:
             f"**Legal scope (draft):** {clean(req['applies_to'])}", "",
             f"**Applicability result:** {clean((row.get('applicability') or {}).get('status', 'unverified legacy'))}", "",
             f"**Applicability reason:** {clean((row.get('applicability') or {}).get('reason', 'Original audit limitations retained.'))}", "",
+            *(["**Stage 05 candidate applicability:** " + clean(candidate["status"]), "",
+               "Reason codes: " + clean(", ".join(candidate["reason_codes"])), "",
+               "Classification/qualification candidates require specialist review; evidence sufficiency is separate.", ""]
+              if candidate else []),
+            *(["Candidate category (REQUIRES REVIEW): " + clean(candidate["classification_candidate"]), ""]
+              if candidate and candidate.get("classification_candidate") else []),
             f"**Evidence status:** `{f['status']}`", "",
             f"**Audit:** {row.get('audit_status', 'legacy / unspecified — not newly verified')}", "",
             f"**Assessment:** {clean(f['explanation'])}", "",

@@ -1,6 +1,6 @@
 # Implementation progress
 
-**Current stage: STAGE_04=PASS**
+**Current stage: STAGE_05=PASS**
 
 **STAGE_01=PASS** - final measured result below supersedes intermediate statuses.
 
@@ -235,3 +235,51 @@ Rollback: revert only the Stage 04 commit back to a3d73ae while retaining state/
 
 Commit: explicitly authorized by the user on the existing feat/stage-01-foundations-telemetry branch. Subject: Implement Stage 04 reviewed regulatory registry and active-law report gates. No push/deployment.
 Next stage: `docs/day_two_prompts/stages/05_APPLICABILITY_ENGINE.md`. STOP after the Stage 04 commit.
+
+
+## Stage 05 implementation in progress (2026-10-17)
+
+STAGE_05=IN_PROGRESS. Baseline 195294d on feat/stage-01-foundations-telemetry; initially clean tree. Inspected full Stage 05/AGENTS/architecture/test matrix, Stage 03 profile provenance and audit, Stage 04 active registry gates, legacy applicability roles and durable review/report dependencies. Plan: bounded typed tri-state rules and exact legal condition references; immutable specialist rule approvals/retirement and source-backed overrides; relevant-field evaluation cache, unknown/conflict/high-impact/classification review handling; optional bounded advisory interpretation that cannot change decisions; additive CLI and nested review compatibility; focused fault/metamorphic tests, full regression, docs and user-requested same-branch commit. No synthetic law/rule seed, legal fetch, downloads, dependency changes or Stage 06.
+
+## Final Stage 05 gate (2026-10-17)
+
+STAGE_05=PASS. Stage 06 has not started. This is a software/offline test gate, not verification of real legal rules, a device classification or conformity.
+
+Actual changes:
+- applicability_rules.py: bounded typed JSON predicates, true/false/unknown composition, exception precedence, exact legal condition references, five-state candidate assessment, source-backed exclusion rationale, high-impact/conflict/composite review queues, and candidate-only classification with a known device-source prerequisite.
+- applicability_service.py: immutable project-scoped rulebook revisions, explicit specialist approvals/retirement, dated rule selection, audit/idempotency/optimistic revision guards, relevant-input evaluation cache and source-bound overrides. Source/registry/rule validity are checked before cache reuse; old sources and decisions remain immutable. Publication rejects oversized revisions before advancing the head.
+- applicability_cli.py and main.py: seven additive schema/show/import/approve/retire/evaluate/override commands; explicit dated local advisory opt-in. No rules/law/classification seed.
+- applicability.py, roles.py, registry_adapter.py and review_state.py: nested typed candidate result for explicit registry-backed contexts; preserved outer legacy status vocabulary, rule/override/engine dependency bindings and current-report invalidation. Injected legacy draft metadata alone cannot enable the registry engine.
+- Q_Mix_report_writer.py: separate candidate applicability and evidence-status presentation with review-required category labels.
+- tests/test_applicability_engine.py: 92 new synthetic tests reusing the existing clearly labelled toy registry fixture. All pre-existing test files unchanged. README/decisions/progress updated; requirements/.env/rag.py, user originals and user indexes unchanged.
+
+Measured checks:
+
+| Command/check | Exact result |
+|---|---|
+| `.\.venv\Scripts\python.exe -m pytest -q tests/test_applicability_engine.py -p no:cacheprovider` | PASS: 92 passed in 35.72s on final production code |
+| Existing registry/orchestrator/report plus initial applicability cases | PASS: 196 passed in 117.19s; intermediate compatibility run |
+| Earlier full suite before the final classification-source guard | PASS: 665 passed, 1 skipped in 244.96s; intermediate only, superseded |
+| `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider` | PASS: 666 passed, 1 skipped in 171.21s; no warnings |
+| Stronger non-null classification/name-edit metamorphic case, same production code | PASS: 1 passed in 13.05s; test-only assertion strengthening during the final full run was verified separately |
+| `.\.venv\Scripts\python.exe -m compileall -q main.py mdr_rag tests/test_applicability_engine.py` | PASS after final source changes |
+| Main/applicability-override CLI help; AST; tracked/new-file whitespace and ignore checks | PASS; all 25 existing commands retained and seven new commands added |
+| Ruff/Black/mypy | NOT RUN: not installed/configured; no tool installation |
+| Real Ollama/OCR/cross-encoder/browser/actual specialist legal interpretation and calibration | NOT RUN; existing opt-in real-model smoke skipped, not counted as a passed integration |
+
+Tests cover all three-state Boolean tables, supported positive/negative routing and missing-vs-false fields, unknown exceptions, explicit exception precedence, exclusion rationale/source requirements, high-impact sterility/invasiveness, conflicting population, composite purpose, modal/normative wording, unknown/unsourced/manual/pending attributes, candidate-only classification and no label from unconditional law without device facts. They also cover rule approval/expiry/conflicts/retirement, edition isolation and forged/unrelated legal references, active-law blocking before model/cache access, current report binding invalidation, repeated evaluation and irrelevant-name cache reuse versus relevant-field invalidation, source/cache/revision tampering, stale/idempotent writes, interrupted head publication, source-preserving audited overrides, injected DSL/review metadata, bounded trees, missing schema/source advice, cancellation, offline/timeout/model/budget fallback and actual guarded-provider fakes with redacted failure logs.
+
+A final code review found that an unconditional reviewed law-only predicate could attach a category label with no known device attribute. The implementation now withholds that label, returns requires_human_review and asks for sourced device qualification predicates. The 92-case focused and final 666-case complete runs include the regression. The later test-only metamorphic strengthening explicitly checks a non-null classification candidate rather than a trivial absent label; it passed separately without production-code changes.
+
+Compatibility: ordinary draft research retains its previous uncertain actor assessment and never gains registry authority from metadata. Registry-backed runs preserve old outer applicable/uncertain/possibly_not_applicable values and store the complete five-state result under candidate_assessment. Not-applicable routing does not become evidence sufficiency or suppress evidence review. Old snapshots remain readable with this code; Stage 04 snapshots require explicit current revalidation for new rule bindings, or historical rendering. No automatic assessment/index/source migration.
+
+Limits/tradeoffs: verified rule semantics and source-fact truth still require humans; quote binding is not entailment. Reviewer identity/qualification is self-declared. Literal/Boolean normalization does not infer synonyms, units, clinical interpretation or definitive class. High-impact routing needs explicit specialist review; classification always remains candidate/requires_review. Unknown/conflicting facts cannot be overridden into unsupported exclusion; correct the sourced profile or reviewed rule first. Manual facts lacking document support remain unresolved for automatic predicates. One applicable approved rule per provision/date, active same-edition references and local-project legacy review integration; cross-edition composition and classification certification are out of scope.
+
+The relevant-field cache excludes cosmetic name/profile revision changes but includes engine/date/edition/provision/rule/source/review/conflict inputs. Actual profile/registry revisions are returned separately. Existing whole-assessment profile invalidation remains broader. Private 20 MiB-bounded snapshots/cache, linear audit lookup and repeated original hashing add local IO; failures can leave unreachable immutable revisions while preserving the old head. No automatic GC/renewal or cross-store atomic publication/currentness guarantee. Every output is a dated source/revision snapshot.
+
+Cost/latency: 0 live model/cloud/API calls and $0 cloud spend; no legal fetch, downloads, dependency installation or user-corpus/index rebuild. Deterministic applicability uses zero model calls. Optional advisory requests share existing durable invocation budgets/deadlines/transient retries, cannot change predicate decisions and preserve uncertainty on failure. Repeated ambiguous --assist calls can consume new inference; no cross-run advisory cache or model/accuracy/dossier latency benchmark claimed. Full-suite timing above is test runtime only.
+
+Rollback: revert only the Stage 05 commit to 195294d; preserve state/applicability, state/regulatory_registry, state/profiles, source archives and assessment histories. Earlier readers may reject the new nested applicability fields/method, so keep this reader or export reports first. No source/cache/history deletion or data rollback was performed.
+
+Commit: explicitly authorized by the user on feat/stage-01-foundations-telemetry. Subject: Implement Stage 05 sourced applicability rules and specialist review. No push/deployment.
+Next stage: `docs/day_two_prompts/stages/06_RETRIEVAL_AND_RERANKING.md`. STOP after this stage and the requested same-branch commit.

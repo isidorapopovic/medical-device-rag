@@ -98,6 +98,8 @@ def main():
     add_commands(subs)
     from mdr_rag.registry_cli import add_commands as add_registry_commands
     add_registry_commands(subs)
+    from mdr_rag.applicability_cli import add_commands as add_applicability_commands
+    add_applicability_commands(subs)
     args = parser.parse_args()
     if args.retrieval is not None:
         os.environ["RETRIEVAL_MODE"] = args.retrieval
@@ -113,7 +115,11 @@ def main():
     if args.rerank or args.rerank_backend is not None:
         config_overrides["reranker_backend"] = "llm" if args.rerank else args.rerank_backend
     try:
-        if args.command.startswith("registry-"):
+        if args.command.startswith("applicability-"):
+            from mdr_rag.applicability_cli import execute as execute_applicability
+            from mdr_rag.core import STATE
+            execute_applicability(args, STATE)
+        elif args.command.startswith("registry-"):
             from mdr_rag.registry_cli import execute as execute_registry
             from mdr_rag.core import STATE
             execute_registry(args, STATE)

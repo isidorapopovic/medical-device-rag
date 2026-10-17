@@ -131,7 +131,9 @@ class AssessmentOrchestrator:
         buffer = SourceBuffer(state.source_buffer)
         if stage == "applicability":
             self.requirement_analyst.anchor(section, buffer, app)
-            result = self.applicability_analyst.assess(section.requirement, section.legal_anchor, profile)
+            result = self.applicability_analyst.assess(section.requirement, section.legal_anchor, profile,
+                **({"app": app} if state.legal_scope.get("registry_selection")
+                   and getattr(section.requirement, "registry_edition_id", None) else {}))
             section.applicability_result = result
             section.applicability, section.applicability_reason = result.status, result.reason
             state.source_buffer = buffer.snapshots

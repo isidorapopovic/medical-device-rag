@@ -787,3 +787,130 @@ Offline checks:
 python -m pytest -q tests/test_regulatory_registry.py -p no:cacheprovider
 python -m pytest -q -p no:cacheprovider
 ```
+
+## Stage 05 candidate applicability rules
+
+Registry-backed review now evaluates **candidate applicability independently of
+document evidence sufficiency**. Supported states are `applicable`,
+`not_applicable`, `conditional`, `unknown` and `requires_human_review`.
+Every decision retains predicate traces, reason codes, legal quote references,
+relevant device-attribute sources and targeted questions. All machine conclusions
+remain candidates; no certified class, CE pathway or conformity decision is issued.
+
+No MDR rule or classification seed is shipped. A specialist must supply an explicit
+rule for an active Stage 04 provision and approve that mapping. The code checks
+edition/provision/source binding, not whether a human's legal interpretation is
+correct. A rule may reference other active provisions in the same edition for
+conditions/exceptions, but must also cite its own target requirement.
+
+The bounded JSON DSL supports `all`, `any`, `not`, `always`, `is_true`,
+`is_false`, `equals` and `one_of`. Trees allow at most 100 uniquely identified
+nodes, depth 8, 20 children per node and 10 exception expressions. Every leaf
+requires legal reference IDs pointing to exact offsets within approved provision
+quotes. Fields come from the Stage 03 profile inventory. Rules contain data only;
+no Python expression, script, uploaded instruction or filename is executed.
+
+Truth is `true|false|unknown`. For example, `false AND unknown` is false,
+`true OR unknown` is true, and `NOT unknown` is unknown. Explicitly confirmed,
+source-backed “not sterile” differs from an absent sterility attribute. Pending,
+legacy, unsourced/manual, conflicting or ambiguous values are never silently false.
+Boolean vocabulary is deliberately small and field-specific; other comparisons use
+literal normalized values. No unit conversion, duration threshold, synonym mapping
+or multilingual classification inference is guessed. Composite purpose/population
+descriptions and modal/normative wording require clarification/review.
+
+True exceptions take precedence over the base scope condition. A false base or true
+exception can produce a candidate exclusion only with an explicitly reviewed
+`exclusion_rationale`, `exclusion_ref_ids` and known documentary device evidence.
+The specialist must verify that the cited text actually supports exclusion;
+a merely sufficient positive condition is not automatically a necessary condition.
+Without that verified rationale, the result requires review. High-impact fields
+(purpose, invasive/implantable, powered status, duration, sterility, target market)
+require explicit specialist routing review even after profile confirmation.
+Conflicts/multiple purposes block automatic exclusion. `candidate_category`, if
+supplied by the specialist rule author, always remains a review-required label,
+never a model-inferred device class. No category label is returned without at least
+one known, sourced device predicate; an unconditional law-only rule instead asks
+for device scope evidence.
+
+PowerShell workflow (replace IDs/paths; revisions assume a fresh rulebook and dates
+are examples of a single-day review, not assertions about current law):
+
+```powershell
+python main.py applicability-schema
+python main.py applicability-import --file YOUR_REVIEWED_RULE_PROPOSAL.json --as-of 2026-10-17 --reviewer "reviewer" --reason "Propose mapping from approved source" --expected-revision 0 --operation-id "rule-import-001"
+python main.py applicability-approve --rule RULE_ID --as-of 2026-10-17 --review-until 2026-10-17 --specialist-reviewed --reviewer "specialist" --reason "Checked condition, exception and exclusion semantics" --expected-revision 1 --operation-id "rule-approve-001"
+
+# Uses the current Stage 03 profile; missing profile/rules produce unknowns.
+python main.py applicability-evaluate --edition EDITION_ID --requirement EDITION_ID.PROVISION_ID --as-of 2026-10-17
+# Optional local clarification advice; does not change the predicate decision.
+python main.py applicability-evaluate --edition EDITION_ID --requirement EDITION_ID.PROVISION_ID --as-of 2026-10-17 --assist
+
+# Confirm a source-supported candidate exclusion, or defer to unknown/conditional/review.
+python main.py applicability-override --edition EDITION_ID --requirement EDITION_ID.PROVISION_ID --as-of 2026-10-17 --status not_applicable --decision-key DECISION_SHA256 --specialist-reviewed --reviewer "specialist" --reason "Checked cited exclusion and device facts" --expected-revision 2 --operation-id "override-001"
+
+python main.py applicability-show
+python main.py review --registry-edition EDITION_ID --registry-as-of 2026-10-17 --assessment-id candidate-review-001
+# Optional administration: retire only when replacing a mapping.
+python main.py applicability-retire --rule RULE_ID --reviewer "specialist" --reason "Replace superseded mapping" --expected-revision 3 --operation-id "rule-retire-001"
+```
+
+Import creates a proposal; approval requires an explicit specialist attestation and
+as-of/expiry dates. Overlapping approved rules for the same provision/date are
+rejected; retire the previous rule or use non-overlapping validity intervals.
+Rule payloads/IDs are immutable. Every mutation records reviewer, reason, operation
+ID, UTC timestamp and parent revision, with optimistic revision checks and exact
+retry idempotency. `applicability-show --revision HASH` opens retained history.
+These reviewer labels are self-declared, not authenticated credentials.
+
+Overrides are bound to the exact evaluation key. They can defer a result or confirm
+its supported candidate conclusion; they cannot turn unknown/conflicting facts into
+an exclusion or contradict failed predicates. Correct the sourced profile or propose
+a new reviewed rule first. A specialist must provide reason and reviewer for
+`not_applicable`; the classification label remains review-required even after a
+routing override. Original source evidence and earlier decisions are never edited.
+
+Deterministic applicability uses zero model calls. The cache key binds engine
+version, project/product, date, edition/provision content, approved rule and only
+the relevant attribute values/review/source/conflict metadata. An irrelevant
+device-name edit can reuse a decision; changing a relevant attribute, edition,
+rule/approval or date reevaluates it. Active law, rule validity and original-source
+integrity are checked before cache reuse. Overrides apply only to their own key.
+The current profile/registry revisions are returned separately from the cached
+candidate decision. Existing assessment-wide profile invalidation remains broader
+than this applicability cache.
+
+`--assist` is off by default. It permits one local structured clarification request
+for unresolved cases under the existing shared call/token/deadline budget and
+transient-only transport retry policy. Output may select only known question fields,
+reason codes and existing legal reference IDs; it cannot supply a decision, rule,
+fact, class or free-form legal conclusion. Invalid/offline/budget-exhausted advice
+leaves uncertainty unchanged. Deterministic conclusions never call the model, even
+with `--assist`. Cancellation propagates. Repeated ambiguous `--assist` previews
+can request new advice; advice is not a cross-run model cache.
+
+State is private ignored `state/applicability/<project hash>/`: immutable JSON
+rulebook revisions/head and derived evaluation cache. Publication is atomic per
+artifact; a failed head write preserves the old head and can leave unreachable
+revisions. Revisions/cache reads and rulebook publication are capped at 20 MiB.
+History lookup and repeated source verification can add local IO; no dossier
+performance benchmark or hardened filesystem tamper-proof storage is claimed.
+Use `--project-id` for isolated CLI/API projects; the legacy review adapter remains
+the `local` project and requires a matching existing corpus/index.
+
+Registry-backed reports retain the full five-state result under
+`applicability.candidate_assessment`. The older outer vocabulary stays compatible:
+candidate exclusion projects to `possibly_not_applicable`, and unresolved/review
+states to `uncertain`. Evidence retrieval/drafting is not suppressed by this
+projection; evidence status is evaluated separately. Rule/override changes invalidate
+the affected current report binding; resume/recompute explicitly. Existing Stage 04
+snapshots without rule bindings need revalidation for current use, or explicit
+historical rendering. Legacy draft reviews keep their prior uncertain actor behavior;
+injected draft metadata cannot enable the registry engine without registry context.
+
+Offline checks:
+
+```powershell
+python -m pytest -q tests/test_applicability_engine.py -p no:cacheprovider
+python -m pytest -q -p no:cacheprovider
+```

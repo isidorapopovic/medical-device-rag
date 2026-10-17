@@ -25,6 +25,9 @@ def review_register(app, *, edition_id=None, as_of=None, saved_scope=None) -> di
     edition = selected["edition"]
     manifest = archive.load(edition.manifest_sha256)
     records = {r["meta"]["source_span_id"]: r for r in records_from_manifest(manifest)}
+    from .applicability_service import ApplicabilityStore
+    rule_store = ApplicabilityStore(app.STATE / "applicability", archive)
+    rule_bindings = {p.id: rule_store.binding(edition.id, p.id) for p in selected["requirements"]}
     requirements = []
     for provision in selected["requirements"]:
         record = records[provision.source_span_id]
@@ -35,12 +38,13 @@ def review_register(app, *, edition_id=None, as_of=None, saved_scope=None) -> di
             legal_sha256=edition.file_sha256, legal_quote_start=provision.start,
             legal_quote_end=provision.end, legal_quote_verified=True,
             human_validated=True, registry_edition_id=edition.id,
-            registry_revision=selected["revision"], registry_dependencies=provision.dependencies,
+            registry_revision=selected["revision"], registry_as_of=as_of.isoformat(),
+            applicability_rule_binding=rule_bindings[provision.id], registry_dependencies=provision.dependencies,
             evidence_type_tags=provision.evidence_type_tags))
     selection = {"edition_id": edition.id, "as_of": as_of.isoformat(),
                  "revision": selected["revision"], "project_id": archive.project_id,
                  "requirement_ids": [r["id"] for r in requirements],
-                 "coverage": selected["coverage"],
+                 "coverage": selected["coverage"], "applicability_rule_bindings": rule_bindings,
                  "selection_sha256": digest([edition.model_dump(mode="json"),
                     [r.model_dump(mode="json") for r in selected["requirements"]]])}
     return {"requirements": requirements, "source": "legal/" + manifest.document.original_name,

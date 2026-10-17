@@ -24,6 +24,7 @@ from .evidence_gate import settings as gate_settings, gate_context, obligation_i
 from .source_buffer import EvidenceRecorder, SourceBuffer, recording
 from .saved_configuration import resolve, environment, scoped_environment
 from .applicability import ApplicabilityAnalyst
+from .applicability_rules import VERSION as APPLICABILITY_RULE_VERSION
 from .reranking import cache_folder
 
 REVIEW_RULES = """You are an evidence-mapping assistant, NOT a regulator or legal decision maker.
@@ -121,7 +122,7 @@ def configuration(k: int) -> dict:
             "cross_encoder_cache": str(cache_folder()), "extraction_version": EXTRACTION_VERSION,
             "query_version": QUERY_VERSION, "retrieval_version": RETRIEVAL_VERSION,
             "review_prompt_hash": fingerprint([REVIEW_RULES, REVIEW_INPUT, StructuredFinding.model_json_schema()]),
-            "applicability_version": fingerprint(inspect.getsource(ApplicabilityAnalyst)),
+            "applicability_version": fingerprint([inspect.getsource(ApplicabilityAnalyst), APPLICABILITY_RULE_VERSION]),
             "validation_version": fingerprint([VALIDATION_VERSION, REVIEWER_RULES, REPAIR_RULES, reviewer_schema(), inspect.getsource(CitationAuditor), inspect.getsource(validation_policy), inspect.getsource(validate_section)])}
 
 
@@ -135,7 +136,8 @@ def corpus_hash(manifest: dict) -> str:
 def dependencies(requirement: RequirementRecord, profile: dict, corpus: str, config: dict) -> Dependencies:
     return Dependencies(
         applicability=fingerprint([config["applicability_version"], requirement.applies_to,
-            requirement.legal_sha256, requirement.legal_source_chunk_id, requirement.exact_quote]),
+            requirement.legal_sha256, requirement.legal_source_chunk_id, requirement.exact_quote,
+            getattr(requirement, "applicability_rule_binding", None)]),
         profile=fingerprint(profile), requirement=fingerprint(requirement.model_dump()),
         corpus=corpus, query=fingerprint({key: config[key] for key in
             ("query_version", "multi_query_enabled", "multi_query_max", "query_planner", "planner_hash")}
