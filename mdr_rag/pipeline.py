@@ -132,6 +132,12 @@ def extract_requirements(pages_spec: str, filename: str | None):
 
 
 def profile_data() -> dict:
+    from .device_profile import ProfileStore, confirmed_profile
+    from .ingestion import IngestionStore
+    profiles = ProfileStore(STATE / "profiles", IngestionStore(STATE / "ingestion"))
+    if profiles.path("head.json").exists():
+        revision, key = profiles.load()
+        return confirmed_profile(revision, key)
     profile = DOCS / "device_profile.json"
     if not profile.exists():
         return {"device_name": "UNSPECIFIED", "uncertainty": "No device profile supplied"}

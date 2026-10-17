@@ -1,6 +1,6 @@
 # Implementation progress
 
-**Current stage: STAGE_02=PASS**
+**Current stage: STAGE_03=PASS**
 
 **STAGE_01=PASS** - final measured result below supersedes intermediate statuses.
 
@@ -154,3 +154,40 @@ Cost: 0 real model/API/network calls, $0 cloud spend, no downloads or dependency
 After reviewing the diff, restore only Stage 02 edits in .gitignore, README.md, main.py, streamlit_app.py and modified mdr_rag adapters to the Stage 01 baseline a916302; remove only the new document_parsers.py, ingestion.py and tests/test_ingestion.py if rolling back code. Do not delete source dossiers, state archives, reports, old snapshots or backup collections. Preserve local audit notes and unrelated files. New schema-2 histories need the current reader or prior exports. Restore index metadata/active backup only after explicit inspection; no data rollback was performed here.
 
 STAGE_02=PASS. Next stage: docs/day_two_prompts/stages/03_DEVICE_PROFILE_AND_REVIEW.md. STOP: Stage 03 has not started. No commit or push made.
+
+
+## Stage 03 implementation in progress (2026-10-17)
+
+STAGE_03=IN_PROGRESS. Inspected Stage 03, prompt protocol, architecture/test matrix, Stage 01 contracts/runtime/providers, Stage 02 archive/parsers, CLI/UI and legacy profile consumers. Baseline branch feat/stage-01-foundations-telemetry; working tree initially clean. Existing Stage 02 focused audit: 65 ingestion + 93 compatibility tests passed.
+
+Plan: (1) add conservative evidence-linked extraction and complete unknown field inventory; (2) add immutable optimistic review revisions, audited manual edits and explicit legacy import; (3) expose CLI/API preview/review and project-local confirmed-fact compatibility projection; (4) test source binding, conflicts, no-source/offline/budget/schema recovery, review/idempotency/fault behavior, run full offline suite, update notes and commit only Stage 03 changes on the current branch. Local model opt-in only; no downloads, legal fetch, cloud, corpus rebuild or Stage 04 work. Streamlit editor remains deferred per Stage 03 specification.
+
+## Final Stage 03 gate (2026-10-17)
+
+STAGE_03=PASS. Stage 04 has not started.
+
+Actual implementation: additive DeviceAttribute evidence/origin/review/conflict fields in contracts.py; device_profile.py for bounded evidence-linked previews, conservative product separation, unknown/question handling, optional local structured generation, immutable revisions and audited optimistic/idempotent review; profile_cli.py plus four additive main.py commands; pipeline.py confirmed-only compatibility projection with unchanged legacy fallback; null-based synthetic example, README workflow, decisions and 57 new deterministic tests. Existing test files and dependencies are unchanged. Documentation is tracked since the user's preceding documentation commit.
+
+Validation:
+- Final focused: `.\.venv\Scripts\python.exe -m pytest -q tests/test_device_profile.py -p no:cacheprovider` — PASS: 57 passed in 5.77s.
+- Earlier profile/foundations/baseline/orchestrator compatibility run — PASS: 140 passed in 14.73s (before final 16 profile regressions were added).
+- Intermediate full suite — PASS: 500 passed, 1 skipped in 112.79s. This run started before the final negation-value fix and five final regressions and is not the final-code gate.
+- `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider` — PASS: 505 passed, 1 skipped in 102.31s (1m42s); no warnings.
+- `.\.venv\Scripts\python.exe -m compileall -q main.py mdr_rag tests/test_device_profile.py` — PASS. AST parsing of all changed Python modules — PASS.
+- CLI main/profile-edit help — PASS: all 15 existing commands retained and four profile commands added.
+- `git diff --check`, new-file whitespace, ignored profile-storage checks and sample JSON import — PASS. Sample import creates zero confirmed assertions.
+- Ruff/Black/mypy — NOT RUN: not installed and no corresponding configured toolchain; no tools/dependencies installed.
+- Real Ollama, real OCR, real CPU cross-encoder, browser UI — NOT RUN. The existing optional cross-encoder test is skipped, not counted as a passed integration. Streamlit profile editing is deferred per Stage 03.
+
+Coverage includes unknown/missing fields, source hashes/offsets, explicit negative values, negation fragments and quote/value disagreement, conditional wording, cross-document conflicts, competitor/multi-product scope, bilingual labels, inert YAML/HTML instructions, malformed output with at most one budgeted repair, actual guarded-transport fakes, offline/timeout/cancellation/budget fallbacks, five repeated previews/publications, immutable original/revision retention, manual edit/confirm/reject, source-free audit origin, stale edits, conflicting idempotency keys, interrupted publication, legacy aliases/unmapped fields and direct API publication bypass rejection.
+
+No source-derived fact is auto-confirmed. Only accepted/overridden values enter the legacy review projection; their revision hash invalidates existing dependency fingerprints. A source quote proves binding, not truth/semantic entailment. Risk class is never inferred and manual classification confidence accepts only categorical review states. Legacy JSON remains unchanged/unverified unless explicitly imported; imports preserve unknowns and extra fields. Existing archived evidence and all previous revisions remain retained.
+
+Limitations: automatic product scoping requires explicit labels in the same passage; ambiguous/unlabelled sources abstain. Literal differences may over-report conflicts; semantic accuracy is unmeasured. One current product profile per project; legacy assessment integration uses local project. Source selection is bounded and visibly partial when capped; OCR-derived spans are excluded. Editors are self-declared rather than authenticated. Re-extraction refuses to erase reviewed decisions; explicitly reject reviewed fields before replacement. History lookup is linear; failed publication may leave unreachable revisions. Earlier Stage 02 OCR quality and index/manifest transaction limitations are unchanged.
+
+Cost/latency: 0 live model/cloud/API calls; $0 cloud spend; no downloads, legal fetch, dependency installation or user-corpus/index rebuild. Temporary real Chroma is exercised only by existing offline synthetic tests. Deterministic preview uses local hash/JSON IO; optional model preview permits one generation plus one schema-repair under shared budget/transport deadlines and existing bounded transient retries. Repeated --llm previews can consume inference again; no global cache or performance benchmark claimed. Profile revisions/source views are private ignored state.
+
+Rollback: revert only this Stage 03 commit to the prior baseline f4d9206; preserve state/ingestion, state/profiles, assessment snapshots and all originals. Older code does not consume new profile revisions, so retain this reader/export JSON before rollback. No data rollback or cleanup was performed. No push or deployment is authorized/performed.
+
+Commit: User explicitly requested a new commit on the same branch, overriding the prompt pack's default no-commit instruction. Commit subject: Implement Stage 03 evidence-linked device profiles and audited review. See git log for the resulting commit ID.
+Next stage: `docs/day_two_prompts/stages/04_REGULATORY_REGISTRY.md`. STOP after Stage 03 and the user-requested commit on the existing branch.

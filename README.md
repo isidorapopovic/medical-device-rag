@@ -573,3 +573,97 @@ Label 20?50 diverse cases where qualified human review is feasible, including un
 ### Offline visual preview, even before you upload documents
 
 Open the **SYNTHETIC DEMO ONLY** HTML files in `eval/` to preview the interactive chart types. All demo metrics and example texts are fictional and do not characterize your real MDR. The real `reports/` outputs are produced only when you run the commands against indexed documents.
+
+## Stage 03 device profiles and reviewer decisions
+
+The profile service reads explicitly selected, immutable **device** extraction manifests.
+It does not rebuild the index, inspect legal documents, or infer device risk class.
+The default preview uses deterministic, labelled text only; `--llm` explicitly opts
+into the existing guarded local Ollama transport. Missing/offline models, exhausted
+budgets and invalid structured output leave unsupported attributes unknown.
+
+Each proposed fact contains source-span IDs and exact quote references to the
+original archived revision. All proposals remain pending human review. Conflicting
+values retain both alternatives with evidence and no chosen value. High-impact
+fields (purpose, invasiveness, implantation, powered status, duration, sterility and
+market) have explicit confirmation questions. False and missing values are distinct;
+negation and conditional wording are preserved. Classification confidence is a
+categorical review status, never a model probability or risk-class decision.
+
+For conservative product separation, automatic extraction requires an explicit
+`Product: YOUR PRODUCT` (or `Device:`) label preceding the fact in the same passage.
+A competitor/new-product label ends that scope. Unlabelled or ambiguous prose
+abstains, even if a model proposes an answer. Do not alter real original files to
+satisfy this rule: supply an audited manual value when evidence cannot be scoped.
+Serbian product/purpose labels have a small explicit alias set; general multilingual
+semantic accuracy has not been measured.
+
+PowerShell workflow (replace uppercase placeholders with actual returned values):
+
+```powershell
+# Archive a device revision first; copy manifest_sha256 from the output.
+python main.py ingest --file documents/device/toy_notes.md --kind device
+
+# Preview without inference or profile publication:
+python main.py profile-extract --product "YOUR PRODUCT" --manifest MANIFEST_SHA256
+
+# Optional local structured model proposals:
+python main.py profile-extract --product "YOUR PRODUCT" --manifest MANIFEST_SHA256 --llm
+
+# Save a pending profile; repeat --manifest for additional source revisions.
+python main.py profile-extract --product "YOUR PRODUCT" --manifest MANIFEST_SHA256 --save --editor "reviewer" --reason "Initial evidence review" --operation-id "extract-001"
+
+# Inspect the current revision, quote references, conflicts and targeted questions:
+python main.py profile-show
+
+# Confirm a source proposal. Copy the current revision_sha256 from the last output.
+python main.py profile-edit --field sterile --action confirm --expected-revision PROFILE_SHA256 --editor "reviewer" --reason "Checked original source statement" --operation-id "review-001"
+
+# Manual override: records an assertion by the reviewer, not a source-extracted fact.
+python main.py profile-edit --field intended_purpose --action override --value "Reviewer supplied purpose" --expected-revision PROFILE_SHA256 --editor "reviewer" --reason "Documented manual clarification" --operation-id "review-002"
+
+# Explicitly migrate existing user JSON; originals are not modified.
+python main.py profile-import --file documents/device_profile.json --product "YOUR PRODUCT" --editor "reviewer" --reason "Import unverified user assertions" --operation-id "import-001"
+```
+
+Review actions are `confirm`, `override` (requires `--value` or `--clear`) and
+`reject`. They require editor, reason, a unique operation ID and the expected current
+revision hash. Repeating the same operation/input returns the original revision;
+reusing its ID with different input fails. Historical revisions are available with
+`profile-show --revision PROFILE_SHA256`. Use `--project-id` consistently for a
+separate project's archive and profile. There is one current product profile per
+project; review/index integration remains the legacy `local` project.
+
+Profiles live under `state/profiles/<project hash>/` with immutable content-addressed
+revisions and an atomically published head. Changes retain the previous attribute,
+new attribute, editor, reason, UTC timestamp, parent revision and request hash.
+A failed head publication keeps the old head; unreachable revisions may remain and
+are never automatically deleted. Reviewed profiles cannot be silently replaced by
+new extraction/import; reject existing reviewed fields explicitly before replacement.
+This prevents re-extraction from discarding reviewer authority. Editor names are
+self-declared audit labels, not authenticated identities.
+
+The existing assessment workflow uses only individually confirmed/overridden values
+from a saved Stage 03 profile, together with its revision fingerprint. Pending,
+conflicting and rejected values are withheld. Human confirmation does not establish
+regulatory truth or verified applicability. If no Stage 03 profile exists, loading the
+historical `documents/device_profile.json` keeps its previous unverified behavior.
+Explicit imports preserve unmapped legacy fields separately and never auto-confirm.
+The example JSON now uses null unknowns and clearly synthetic labelling.
+
+Extraction reads at most 100 selected manifests and presents at most 12 passages /
+10,000 source characters to the model. Selection favours labelled fields across
+documents; omitted passages produce `source_selection_incomplete`. OCR-derived
+passages are withheld from automatic profile extraction. All facts remain proposals,
+and a valid quote binding alone does not prove semantic relevance. One separate
+schema-repair call is allowed under the same run budget; transport retries retain
+the existing transient-only policy. Repeated preview calls with `--llm` can incur
+new local inference; no cross-run model cache or semantic benchmark is claimed.
+Streamlit editing is deferred to the later UI stage.
+
+Offline checks:
+
+```powershell
+python -m pytest -q tests/test_device_profile.py -p no:cacheprovider
+python -m pytest -q -p no:cacheprovider
+```

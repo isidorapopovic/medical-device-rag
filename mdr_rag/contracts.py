@@ -151,16 +151,29 @@ class Requirement(Contract):
         return self
 
 
+class AttributeConflict(Contract):
+    value: Annotated[str, Field(min_length=1, max_length=10000)]
+    evidence_ids: list[Id] = Field(min_length=1)
+
+
 class DeviceAttribute(Contract):
     name: Id
     value: Annotated[str, Field(max_length=10000)] | None = None
     source_span_ids: list[Id] = Field(default_factory=list)
     status: Literal["extracted", "user_confirmed", "unknown", "conflicting"] = "unknown"
+    evidence_ids: list[Id] = Field(default_factory=list)
+    origin: Literal["source", "manual", "legacy", "unknown"] = "unknown"
+    review_state: Literal["pending", "accepted", "overridden", "rejected", "requires_review"] = "pending"
+    conflicts: list[AttributeConflict] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def grounded(self):
         if self.status == "extracted" and (self.value is None or not self.source_span_ids):
             raise ValueError("Extracted attributes require a value and source")
+        if self.status == "conflicting" and (self.value is not None or len(self.conflicts) < 2):
+            raise ValueError("Conflicting attributes require alternatives, not a chosen value")
+        if self.origin == "source" and not self.evidence_ids:
+            raise ValueError("Source attributes require exact quote evidence")
         return self
 
 

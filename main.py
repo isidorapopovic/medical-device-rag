@@ -92,6 +92,8 @@ def main():
     graph.add_argument("--assessment", default=None)
     graph.add_argument("--out", default=None)
     graph.add_argument("--max-requirements", type=int, default=140)
+    from mdr_rag.profile_cli import add_commands
+    add_commands(subs)
     args = parser.parse_args()
     if args.retrieval is not None:
         os.environ["RETRIEVAL_MODE"] = args.retrieval
@@ -107,7 +109,11 @@ def main():
     if args.rerank or args.rerank_backend is not None:
         config_overrides["reranker_backend"] = "llm" if args.rerank else args.rerank_backend
     try:
-        if args.command == "inspect":
+        if args.command.startswith("profile-"):
+            from mdr_rag.profile_cli import execute
+            from mdr_rag.core import STATE
+            execute(args, STATE)
+        elif args.command == "inspect":
             inspect_files()
         elif args.command == "locate":
             inspect_files(args.phrase)
