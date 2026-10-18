@@ -170,12 +170,23 @@ def list_documents(kind: str) -> list[Path]:
 def main() -> None:
     st.set_page_config(page_title="Medical Device RAG", page_icon="📄", layout="wide")
     st.title("Medical Device RAG")
-    st.caption("Upload, index, preview and ask questions about local legal and device source documents.")
+    st.caption("Ask questions about your saved documents and inspect their cited source passages.")
     st.info(
         "Files are stored in this project's documents folder. Uploading does not index "
         "them or send them to a model. This app has no authentication; keep it bound to "
         "localhost and do not expose it to a network."
     )
+
+    manage_documents = st.sidebar.toggle("Manage documents", value=False,
+                                         help="Show upload and preview tools when you want to add or change files.")
+    st.caption("Previously saved and indexed documents are available automatically. "
+               "You do not need to upload them again. Ollama must be running to answer questions.")
+    render_question_controls()
+    if not manage_documents:
+        render_index_controls()
+        st.caption("To add documents or preview saved files, enable Manage documents in the sidebar. "
+                   "If saved documents are not indexed yet, click Index Documents above once.")
+        return
 
     with st.sidebar:
         st.header("Upload documents")
@@ -214,7 +225,6 @@ def main() -> None:
     summary_left.metric("Legal / regulatory files", len(legal_documents))
     summary_right.metric("Device files", len(device_documents))
     render_index_controls()
-    render_question_controls()
     st.subheader("Document preview")
 
     category = st.selectbox(

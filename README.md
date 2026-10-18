@@ -300,6 +300,8 @@ The offline acceptance test exercises PDF save, stale status, button indexing, R
 
 ### Ask Questions and inspect sources
 
+The app opens directly to **Ask Questions**, using previously saved and indexed documents automatically. No upload or reindexing is required when the existing index is **Ready**. Enable **Manage documents** in the sidebar only when you want to upload or preview files. Saved files without a valid index can be prepared with **Index Documents**, without uploading them again.
+
 After the index shows **Ready**, use **Ask Questions**. All documents from the verified manifest are selected initially. Use **Source collections** to choose all, legal only or device only, then **Indexed documents** to select any subset. Selecting no documents disables the chat input. Missing or stale indexes block questions until rebuilt. Install both configured local models (`EMBEDDING_MODEL` and `OLLAMA_LLM_MODEL` in `.env`) and keep Ollama running; defaults are `embeddinggemma` and `qwen3:4b`.
 
 Enter a question in the chat input and press Enter. Dense retrieval applies the document filter in Chroma before top-k selection; BM25 ranks only the selected corpus, and reranking receives only selected passages. A source selection is part of the BM25 cache key. Identical filenames in legal and device folders remain distinct canonical source IDs. Single-chunk selections retain positive BM25 matching weights, avoiding the library's negative average-IDF edge case.
