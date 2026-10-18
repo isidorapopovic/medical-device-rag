@@ -194,7 +194,8 @@ def run_review(limit: int | None = None, k: int | None = None, **options):
 
 
 @managed_run
-def ask_question(question: str, selected_sources: set[str] | None = None, k: int = 5) -> AnswerResult:
+def ask_question(question: str, selected_sources: set[str] | None = None, k: int = 5,
+                 *, retrieval_query: str | None = None) -> AnswerResult:
     if not question.strip():
         return AnswerResult(question, status="invalid_question", error="Enter a question before asking.")
     if not 1 <= k <= 30:
@@ -210,11 +211,11 @@ def ask_question(question: str, selected_sources: set[str] | None = None, k: int
     with recording(run.recorder):
         for kind in ("legal", "device"):
             if selected_sources is None:
-                evidence.extend(hybrid_search(question, kind, k))
+                evidence.extend(hybrid_search(retrieval_query or question, kind, k))
             else:
                 scope = {source for source in selected_sources if source.startswith(kind + "/")}
                 if scope:
-                    evidence.extend(hybrid_search(question, kind, k, sources=scope))
+                    evidence.extend(hybrid_search(retrieval_query or question, kind, k, sources=scope))
     if selected_sources is not None and any(p["meta"]["source"] not in selected_sources for p in evidence):
         raise RuntimeError("Retrieval returned a source outside the selected scope")
     if not evidence:

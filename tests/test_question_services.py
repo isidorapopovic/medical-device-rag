@@ -118,7 +118,11 @@ def test_cli_uses_shared_operation_and_keeps_citation_output(documents, monkeypa
 
 
 def ask_button(ui):
-    return next(button for button in ui.button if button.label == "Ask")
+    return ui.chat_input[0]
+
+
+def submit(ui, question="What records?"):
+    return ui.chat_input[0].set_value(question).run()
 
 
 def test_ui_acceptance_filtered_pdf_then_docx_and_no_duplicate_calls(documents, monkeypatch):
@@ -126,8 +130,7 @@ def test_ui_acceptance_filtered_pdf_then_docx_and_no_duplicate_calls(documents, 
     ui = app()
     assert set(ui.multiselect[0].value) == {"legal/alpha.pdf", "legal/beta.pdf", "device/alpha.docx"}
     ui.multiselect[0].set_value(["legal/alpha.pdf"]).run()
-    ui.text_area(key="single_question").set_value("What records?")
-    ask_button(ui).click().run()
+    submit(ui)
     assert not ui.exception
     assert any("Supported" in item.value for item in ui.success)
     assert any("legal/alpha.pdf" in item.label and "PDF page" in item.label for item in ui.expander)
@@ -136,12 +139,12 @@ def test_ui_acceptance_filtered_pdf_then_docx_and_no_duplicate_calls(documents, 
     ui.run()
     assert len(calls) == count
     ui.multiselect[0].set_value(["device/alpha.docx"]).run()
-    assert not ui.expander  # An old answer must not appear under a new selection.
-    ask_button(ui).click().run()
+    assert any("legal/alpha.pdf" in item.label for item in ui.expander)  # Historical scope is retained.
+    submit(ui)
     assert not ui.exception
     assert any("device/alpha.docx" in item.label and "text block" in item.label for item in ui.expander)
     assert any("SYNTHETIC DEVICE" in item.value for item in ui.text)
-    assert all("legal/alpha.pdf" not in item.label for item in ui.expander)
+    assert any("legal/alpha.pdf" in item.label for item in ui.expander)
 
 
 def test_ui_empty_selection_and_collection_shortcuts(documents):
@@ -169,8 +172,7 @@ def test_invalid_index_blocks_service_and_ui(documents, monkeypatch, problem):
 def test_ui_model_failure_remains_usable_and_explicit(documents, monkeypatch):
     model(monkeypatch, failure="generation_error")
     ui = app()
-    ui.text_area(key="single_question").set_value("What records?")
-    ask_button(ui).click().run()
+    submit(ui)
     assert not ui.exception and ui.error
     assert not ask_button(ui).disabled and not ui.expander
     assert "Ollama" in ui.error[0].value and "PRIVATE" not in ui.error[0].value
@@ -179,8 +181,7 @@ def test_ui_model_failure_remains_usable_and_explicit(documents, monkeypatch):
 def test_ui_insufficient_evidence_is_distinct_from_technical_failure(documents, monkeypatch):
     monkeypatch.setenv("RETRIEVAL_MODE", "bm25")
     ui = app()
-    ui.text_area(key="single_question").set_value("unmatchedgibberish")
-    ask_button(ui).click().run()
+    submit(ui, "unmatchedgibberish")
     assert not ui.exception and not ui.error
     assert any("Insufficient evidence" in item.value for item in ui.warning)
 

@@ -50,7 +50,8 @@ def get_question_context() -> QuestionContext:
         return QuestionContext(error="Index could not be verified. Rebuild it in Documents before asking.")
 
 
-def ask_question(question: str, selected_sources: set[str] | None = None, k: int = 5) -> AnswerResult:
+def ask_question(question: str, selected_sources: set[str] | None = None, k: int = 5,
+                 *, retrieval_query: str | None = None) -> AnswerResult:
     """UI boundary around the shared CLI/Q&A engine with safe, actionable errors."""
     context = get_question_context()
     if context.error:
@@ -60,7 +61,8 @@ def ask_question(question: str, selected_sources: set[str] | None = None, k: int
         return AnswerResult(question, status="invalid_selection",
                             error="Select at least one document from the current index.")
     try:
-        return pipeline.ask_question(question, selected_sources=selection, k=k)
+        return pipeline.ask_question(question, selected_sources=selection, k=k,
+                                     **({"retrieval_query": retrieval_query} if retrieval_query else {}))
     except Exception as exc:
         from .errors import ParsingError, MissingModel
         from pydantic import ValidationError

@@ -5,7 +5,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from mdr_rag.core import DOCS, ROOT, source_records
-from mdr_rag.app_services import get_index_status, index_documents, get_question_context, ask_question
+from mdr_rag.app_services import get_index_status, index_documents, get_question_context
 from mdr_rag.document_ui import SUPPORTED_EXTENSIONS, ingest_uploaded_document
 from mdr_rag.ingestion import confined, extraction_warnings
 
@@ -15,43 +15,7 @@ SUPPORTED_TYPES = sorted(extension.lstrip(".") for extension in SUPPORTED_EXTENS
 load_dotenv(ROOT / ".env")
 
 
-def render_question_controls() -> None:
-    st.header("Ask Questions")
-    st.caption("Answers use only your selected indexed documents and local Ollama. "
-               "Uploaded legal documents may be outdated; this is not a compliance decision.")
-    context = get_question_context()
-    if context.error:
-        st.warning(context.error)
-    # Reset the default selection when the index changes, without regenerating an answer.
-    if st.session_state.get("question_index_version") != context.index_version:
-        st.session_state["question_sources"] = list(context.sources)
-        st.session_state["question_index_version"] = context.index_version
-        st.session_state.pop("question_result", None)
-    scope = st.radio("Source collections", ["All documents", "Legal only", "Device only"], horizontal=True)
-    options = [source for source in context.sources if scope == "All documents" or
-               source.startswith("legal/" if scope == "Legal only" else "device/")]
-    if st.session_state.get("question_collection_scope") != scope:
-        st.session_state["question_sources"] = options
-        st.session_state["question_collection_scope"] = scope
-    selected = st.multiselect("Indexed documents", options=options, key="question_sources",
-                             format_func=lambda source: source.replace("legal/", "Legal / ", 1)
-                             if source.startswith("legal/") else source.replace("device/", "Device / ", 1),
-                             disabled=bool(context.error))
-    if not selected:
-        st.info("Select at least one indexed document to ask a question.")
-    with st.form("ask_question_form"):
-        question = st.text_area("Question", key="single_question", max_chars=4000)
-        submitted = st.form_submit_button("Ask", disabled=bool(context.error) or not selected)
-    view_key = (context.index_version, tuple(sorted(selected)))
-    if submitted:
-        with st.spinner("Retrieving selected documents and checking the answer…"):
-            result = ask_question(question, selected_sources=set(selected))
-        st.session_state["question_result"] = (view_key, result)
-    saved = st.session_state.get("question_result")
-    if not saved or saved[0] != view_key or context.error:
-        return
-    result = saved[1]
-    st.caption(f"Question: {result.question}")
+def render_answer(result) -> None:
     if result.status == "supported":
         st.success("Supported — citation spans checked and support reviewed by the local model")
         st.write(result.answer)
@@ -69,6 +33,90 @@ def render_question_controls() -> None:
         st.error(result.error)
     for limitation in result.limitations:
         st.caption(limitation)
+
+
+
+def render_question_controls() -> None:
+    from uuid import uuid4
+    from mdr_rag.conversations import Conversation, submit_turn
+
+    st.header("Ask Questions")
+    st.caption("Answers use only selected indexed documents and local Ollama. "
+               "Uploaded legal documents may be outdated; this is not a compliance decision.")
+    context = get_question_context()
+    conversations = st.session_state.setdefault("conversations", {})
+    if not conversations:
+        first = Conversation(selected_sources=list(context.sources))
+        conversations[first.conversation_id] = first
+        st.session_state["active_conversation"] = first.conversation_id
+    with st.sidebar:
+        st.header("Conversations")
+        st.caption("Session only: chats are lost on browser reload/disconnect or server restart.")
+        if st.button("New conversation"):
+            fresh = Conversation(selected_sources=list(context.sources))
+            conversations[fresh.conversation_id] = fresh
+            st.session_state["active_conversation"] = fresh.conversation_id
+        active_id = st.selectbox("Conversation", list(conversations), key="active_conversation",
+                                 format_func=lambda cid: f"{conversations[cid].title} ({cid[:6]})")
+        conversation = conversations[active_id]
+        if st.button("Clear current conversation"):
+            conversation.messages.clear()
+            conversation.title = "New conversation"
+        st.caption("Clear removes this chat's turns from the session; other chats are kept. "
+                   "Local evidence audit files are retained.")
+    if context.error:
+        st.warning(context.error)
+    # Widget keys are per conversation; filter changes never mutate old turns.
+    scope = st.radio("Source collections", ["All documents", "Legal only", "Device only"],
+                     index=["All documents", "Legal only", "Device only"].index(conversation.collection_scope),
+                     key=f"scope_{active_id}", horizontal=True)
+    options = [source for source in context.sources if scope == "All documents" or
+               source.startswith("legal/" if scope == "Legal only" else "device/")]
+    selection_key = f"sources_{active_id}"
+    if not context.error:
+        if not conversation.sources_initialized:
+            conversation.selected_sources = list(options)
+            conversation.sources_initialized = True
+        if scope != conversation.collection_scope:
+            conversation.selected_sources = list(options)
+        conversation.selected_sources = [s for s in conversation.selected_sources if s in options]
+        if (selection_key not in st.session_state or scope != conversation.collection_scope
+                or st.session_state.get(f"selection_version_{active_id}") != context.index_version
+                or not set(st.session_state[selection_key]) <= set(options)):
+            st.session_state[selection_key] = list(conversation.selected_sources)
+        st.session_state[f"selection_version_{active_id}"] = context.index_version
+    else:
+        st.session_state.pop(f"selection_version_{active_id}", None)
+    conversation.collection_scope = scope
+    selected = st.multiselect("Indexed documents", options=options,
+                              default=None, key=selection_key, disabled=bool(context.error))
+    if not context.error:
+        conversation.selected_sources = list(selected)
+    if not selected:
+        st.info("Select at least one indexed document to ask a question.")
+
+    for turn in conversation.messages:
+        with st.chat_message("user"):
+            st.write(turn.question)
+        with st.chat_message("assistant"):
+            if context.error or turn.index_version != context.index_version:
+                st.warning("This turn may refer to an earlier index version. Its saved citations "
+                           "have not been verified against the current index.")
+            st.caption("Documents used for this turn: " + ", ".join(turn.selected_sources))
+            render_answer(turn.result)
+            if turn.retrieval_query != turn.question:
+                with st.expander("Follow-up retrieval question"):
+                    st.text(turn.retrieval_query)
+
+    question = st.chat_input("Ask a question or follow-up", key=f"chat_{active_id}",
+                             max_chars=4000, disabled=bool(context.error) or not selected)
+    if question:
+        with st.spinner("Retrieving selected documents and checking the answer..."):
+            turn = submit_turn(conversation, question, str(uuid4()))
+        if turn is None:
+            st.error("Question was not submitted. Check the index and document selection, then retry.")
+        else:
+            st.rerun()
 
 
 def render_index_controls() -> None:
