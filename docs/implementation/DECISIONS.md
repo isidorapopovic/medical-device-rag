@@ -38,3 +38,34 @@ Additional Stage 02 compatibility and quality decisions:
 - Native pages dominated by Unicode replacement glyphs (over 5% of non-padding text by the current engineering heuristic) are marked unreadable/needs_ocr and produce no citable spans. This is a conservative extraction-quality rule, not calibrated legal confidence or proof of OCR accuracy.
 - The initial full test run passed 445 tests with one optional model skip, but began before final glyph/filename refinements. It is not used as the final-code gate. A focused compatibility run then caught the resolver's interaction with the unchanged mocked PDF opener; the adapter was fixed, and the original test plus current ingestion cases passed unchanged.
 - Older application versions do not understand new schema-2 archived source passages. Keep this reader (or export reports) when rolling code back after producing new reports; legacy schema-1 histories remain loadable and their IDs/shapes are preserved. No source archive is deleted by rollback.
+
+## Stage 03 decisions (2026-10-20)
+
+- Extend existing DeviceAttribute contracts with additive origin/review/conflict fields and
+  self_declared status; keep existing DeviceProfile and legacy assessment consumers intact.
+  Rich ProfileDraft/ProfileField carry immutable quote evidence separately. No automatic
+  migration of existing user JSON, no new SQL migration: the Stage 01 run ledger stays SQL,
+  while profiles follow Stage 02 content-addressed JSON under ignored state/device_profiles.
+- Explicit device manifest selection and same-span target name prevent filename-based or
+  cross-project inference. Deterministic labelled extraction is default; local model use
+  requires --use-model and existing guarded provider. Cap sources/passages/text and preserve
+  negation/modal language verbatim. This sacrifices recall for conservative subject scope.
+- All automatic fields remain pending. Literal raw quote validation proves provenance only;
+  it is not semantic validation. Class/category inference is disabled. Conflicts keep every
+  value/source and cannot be confirmed without an explicit human override.
+- Legacy imports remain self-declared, pending; original JSON is retained and aliases mapped.
+  Unsupported legacy fields are not promoted to automatic regulatory assertions. New profile
+  state does not replace the existing flat applicability input before the later workflow stage.
+- Reviews append editor/reason/time/before/after; immutable revisions and parent links retain
+  evidence. Expected-head locking prevents lost updates. Revision/head writes are individually
+  atomic, with possible orphan revisions after failure; no deletion or cross-store transaction
+  claim. Re-extraction explicitly resets review and retains the prior parent revision.
+- CLI/API extraction, import, show and review are this stage's interface. Streamlit editable
+  profile form is explicitly deferred by Stage 03 to the later reviewer workspace. Existing
+  Day Three indexing, filtered QA and session conversations are preserved.
+
+Final Stage 03 native-format decision: PDF's universal table-layout diagnostic is a
+warning, not an unreadable-page verdict. Exact native prose may become pending profile
+facts with source_layout_unverified; OCR/poor text/nested-table failures remain excluded.
+The complete final offline suite passed 556 tests with two opt-in model tests skipped.
+No performance or regulatory accuracy claim follows from deterministic fixture results.

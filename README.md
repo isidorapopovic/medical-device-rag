@@ -1,6 +1,81 @@
 # Medical Device RAG
 
-The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and single-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
+The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and multi-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
+
+## Evidence-linked device profiles (Day Two Stage 03)
+
+The additive `profile` CLI/API previews device facts without changing the legacy profile,
+review pipeline, index or Streamlit conversations. First archive device files with `ingest`;
+use its returned manifest SHA256 below. Replace angle-bracket placeholders.
+
+```powershell
+python main.py ingest --file documents/device/your_device.txt --kind device --project-id local
+python main.py profile extract --target "Exact device name" --manifest <MANIFEST_SHA256>
+python main.py profile extract --target "Exact device name" --manifest <MANIFEST_SHA256> --save
+python main.py profile show --revision <PROFILE_REVISION>
+python main.py profile review --revision <PROFILE_REVISION> --field intended_purpose --decision confirm --editor "Reviewer" --reason "Checked original source"
+python main.py profile review --revision <LATEST_REVISION> --field active --decision override --value "Self-declared value" --editor "Reviewer" --reason "Explain correction"
+python main.py profile review --revision <LATEST_REVISION> --field sterile --decision reject --editor "Reviewer" --reason "Unresolved evidence"
+python main.py profile import --target "Exact device name" --file device_profile.example.json
+```
+
+Repeat `--manifest` for multiple device sources/revisions; keep `--project-id` consistent
+on all commands. Extraction/import previews are not saved without `--save`. Review always
+saves a new revision; use its returned revision for the next edit. Saving another extraction
+or import for an existing target requires `--revision <CURRENT_HEAD>` and resets the new
+draft to pending review, preserving the preceding revision through its parent. Example
+profile values are placeholders, never actual device evidence.
+
+Fields cover name, manufacturer, intended purpose, indication, population, intended user,
+environment, anatomical use, contact route/duration, invasive/implantable, active/powered,
+software/AI, sterile/sterilization, reusable, measurement, accessories, technical features,
+market and unknowns. Automatic category/classification stays unknown; no model determines
+risk class or conformity. High-impact fields require human confirmation or override.
+
+The deterministic path recognizes explicit line labels such as `Device name: ...`,
+`Intended purpose: ...`, `Sterile: not sterile`, and `Contact duration: ...`. Each usable
+span must explicitly identify only the target device. Missing subjects, competitor/comparison
+text, mixed named products, flagged extraction and recognized instruction payloads abstain.
+This loses recall across pages and loosely structured dossiers; use an audited manual value
+rather than guessing. Negation and modal language remain literal, not booleans. Different
+literal values remain conflicting even if a human might judge them synonymous. Explicitly
+supplied older/newer manifests are separate evidence, never silently superseded.
+
+Add `--use-model` for bounded local Role A extraction of remaining fields. A preview accepts
+at most 32 manifests, 16 eligible spans and 10,000 passage characters; limits flag partial
+coverage. Ollama shares Stage 01 call/token/time/circuit guards. One schema-repair attempt
+uses the same budget. Quotes, offsets and supplied span identities must match; model values
+retain the whole literal quote and pass a conservative field-topic cue check. This establishes provenance, not semantic correctness or
+completeness: all extracted facts remain pending review. Offline/missing models, timeouts
+and budget exhaustion retain deterministic fields and unknowns with safe warnings. Fully
+labelled/no-source previews skip inference. No evidence means `INSUFFICIENT_EVIDENCE`.
+
+Immutable JSON revisions and per-target heads live under ignored
+`state/device_profiles/<project hash>/`. Extracted facts preserve ingestion manifest, span,
+quote offsets and origin. Review records editor, reason, UTC time, before/after and parent
+revision, preserving old evidence and conflicts. Locking and expected revisions reject stale
+concurrent edits. Publication is atomic per file; failure may leave an orphan revision while
+the old head remains readable. No cleanup deletes originals/history. These local files contain
+sensitive device facts/reviewer identities; local storage provides no authentication or
+encryption. Use existing `source-view` to inspect archived originals.
+
+Legacy import preserves the original JSON as untrusted data, maps `device_name`,
+`active_device`, and `device_description`, and marks scalars `self_declared` pending review
+without invented citations. Unknown/null values remain null; unsupported structures remain
+in the legacy payload. It neither overwrites the old file nor silently changes applicability
+inputs. The editable Streamlit profile form belongs to the later reviewer-workspace stage.
+
+Offline smoke: `python -m pytest -q tests/test_device_profile.py -p no:cacheprovider`.
+Expected: 36 passed using synthetic non-regulatory fixtures. Covers contradictions,
+negation/modality, bilingual text, multi-product/competitor/injection abstention, missing/scan
+sources, collection/project isolation, schema failure, budget-bound repair, review history,
+Windows names and publication failure. Real Ollama/dossier accuracy and browser scenarios
+remain separate integration checks.
+
+Native PDF/DOCX/Markdown profile fixtures verify exact archived quotes and physical PDF
+pages. The parser's general PDF table-layout warning does not discard readable prose;
+it remains visible as `source_layout_unverified`. OCR/unreadable/replacement-character and
+unextracted nested-table spans are excluded. Table semantics remain unverified.
 
 `rag.py` is a separate, older Gemini prototype retained for reference, not the supported application. It imports `mdr_rag.tls` and `mdr_rag.quota`, which are not present in this checkout, and expects Gemini dependencies and credentials not used by the modular app. Do not use it for the supported workflow; use `main.py` instead. The script is retained in place. It uses the same `vector_db/` directory but a separate collection named `medical_device_rag_<Gemini embedding model with hyphens replaced by underscores>`; the modular app uses `medical_mdr_evidence`. Do not delete, migrate or reuse the legacy collection as an Ollama index.
 

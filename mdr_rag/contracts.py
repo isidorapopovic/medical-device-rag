@@ -155,7 +155,10 @@ class DeviceAttribute(Contract):
     name: Id
     value: Annotated[str, Field(max_length=10000)] | None = None
     source_span_ids: list[Id] = Field(default_factory=list)
-    status: Literal["extracted", "user_confirmed", "unknown", "conflicting"] = "unknown"
+    status: Literal["extracted", "user_confirmed", "unknown", "conflicting", "self_declared"] = "unknown"
+    origin: Literal["unknown", "deterministic", "model", "manual", "legacy"] = "unknown"
+    review_state: Literal["pending", "accepted", "overridden", "rejected"] = "pending"
+    conflicts: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def grounded(self):

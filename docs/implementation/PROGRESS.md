@@ -1,6 +1,26 @@
 # Implementation progress
 
-**Current stage: STAGE_02=PASS**
+**Current stage: STAGE_03=PASS**
+
+## Stage 03 execution plan (2026-10-20)
+
+Inspected Stage 03, architecture/test matrix and repository instructions, README, CLI,
+ingestion archives, provider/runtime guards, contracts, legacy applicability and Day Three
+services/tests. Baseline: clean branch feat/day-three-rag-questions; Day Three focused
+tests 72 passed/1 opt-in skipped. Prior Stage 02 full suite 448 passed/1 skipped.
+Documentation is now tracked (older ignored/no-commit statements below are historical).
+
+Plan: (1) extend profile contracts compatibly; (2) implement bounded device-only archive
+extraction, exact quotes, product scope, conflicts and manual fallback; (3) persist
+immutable profile revisions and reviewed edits with optimistic concurrency, add additive
+CLI preview/review/import; (4) add synthetic offline and failure tests, run focused then
+full suite, document results and commit only after gates pass. Streamlit profile editing
+belongs to the later reviewer workspace stage; current conversations remain unchanged.
+
+Risks: literal quotations establish provenance, not semantic correctness. All extracted
+facts remain pending review; no autonomous classification or conformity conclusions.
+No real corpus/model/network calls, downloads or dependency installation planned.
+Next action: implement contracts, service and tests together.
 
 **STAGE_01=PASS** - final measured result below supersedes intermediate statuses.
 
@@ -154,3 +174,117 @@ Cost: 0 real model/API/network calls, $0 cloud spend, no downloads or dependency
 After reviewing the diff, restore only Stage 02 edits in .gitignore, README.md, main.py, streamlit_app.py and modified mdr_rag adapters to the Stage 01 baseline a916302; remove only the new document_parsers.py, ingestion.py and tests/test_ingestion.py if rolling back code. Do not delete source dossiers, state archives, reports, old snapshots or backup collections. Preserve local audit notes and unrelated files. New schema-2 histories need the current reader or prior exports. Restore index metadata/active backup only after explicit inspection; no data rollback was performed here.
 
 STAGE_02=PASS. Next stage: docs/day_two_prompts/stages/03_DEVICE_PROFILE_AND_REVIEW.md. STOP: Stage 03 has not started. No commit or push made.
+
+## Stage 03 measured progress (2026-10-20)
+
+- Initial synthetic profile suite: 26 passed/1 failed. Missing attributes in an empty model
+  object were initially accepted by a default; made the output inventory explicitly required.
+- Compatibility suite: 115 passed in 63.35s (profile/foundations/orchestrator/conversations).
+- Expanded profile suite: 30 passed/1 failed due to the new test referring to a nonexistent
+  settings log_path; corrected to existing database_path.with_suffix('.jsonl').
+- Next profile suite: 31 passed in 10.69s.
+- An early full suite was interrupted during final review; NOT a completed gate. Final review
+  added explicit unknown-label abstention, consistent persisted CLI revision output, and
+  profile-stage metadata-only telemetry. No existing tests changed or weakened.
+- Final focused profile + foundations: 98 passed in 7.92s, including 33 new profile cases.
+- Final complete suite: RUNNING using
+  `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-stage03-release-full`.
+- profile --help, compileall and intermediate diff whitespace checks: PASS.
+
+No actual provider network/model calls, user-corpus extraction, dependencies or downloads.
+Real model/OCR/browser integration NOT RUN. Next: full suite result, privacy/diff checks,
+final documentation and authorized commit. Stage 04 is not started.
+
+Final review also added a conservative model field-topic check: even a genuine quotation
+cannot populate an unrelated field merely because its offsets match. Unsupported topics
+and explicit unknown quotations abstain; this is not a semantic entailment guarantee.
+The release-full run was interrupted for this refinement (NOT a completed test gate).
+Current exact code: profile + foundations 98 passed in 8.29s. Definitive full command:
+`.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-stage03-complete`.
+
+Native-format review found the Stage 02 parser marks every PDF with a general
+pdf_tables_not_structurally_verified diagnostic. Changed profile filtering to reject
+known blocking extraction/OCR flags while preserving readable native prose and its
+source_layout_unverified warning. Added PDF, DOCX and Markdown profile roundtrip tests,
+including exact physical PDF page. The previous complete run was interrupted for this
+fix and is NOT a gate. Final focused native-format/profile/foundation command:
+`.\.venv\Scripts\python.exe -m pytest -q tests/test_device_profile.py tests/test_foundations.py -p no:cacheprovider --basetemp reports/test-temp-stage03-native-formats`
+PASS: 101 passed in 8.82s, including 36 new profile cases.
+Final full command (current code, pending):
+`.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-stage03-gate`.
+
+## Final Stage 03 gate - STAGE_03=PASS (2026-10-20)
+
+| Check | Exact result |
+|---|---|
+| `.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-stage03-gate` | PASS: 556 passed, 2 skipped in 270.41s (4m30s), no warnings |
+| `.\.venv\Scripts\python.exe -m pytest -q tests/test_device_profile.py tests/test_foundations.py -p no:cacheprovider --basetemp reports/test-temp-stage03-native-formats` | PASS: 101 passed in 8.82s; 36 new profile cases |
+| Earlier profile/foundations/orchestrator/conversations | PASS: 115 passed in 63.35s before final additions |
+| `.\.venv\Scripts\python.exe main.py --help` and `main.py profile --help` | PASS: all 15 earlier commands retained, additive profile command |
+| `.\.venv\Scripts\python.exe -m compileall -q main.py mdr_rag tests/test_device_profile.py` | PASS on final source |
+| `git diff --check`, staged whitespace and scoped-file review | PASS; only eight intentional files; no secrets or real source data included |
+| Ignore checks for .env, state/device_profiles and reports | PASS |
+| Live Ollama / real cross-encoder / OCR / manual browser | NOT RUN: two existing opt-in model checks skipped; no live services invoked |
+| Ruff / mypy / Black | NOT RUN: not installed, no configured toolchain found; no installation performed |
+
+Implementation files:
+- mdr_rag/device_profile.py: bounded device-only manifest preview, deterministic labelled
+  fields, opt-in Role A provider, one budget-bound schema repair, exact quote/offset/topic
+  validation, subject isolation, conflict merge, manual fallback/questions, legacy import,
+  metadata-only profile events, immutable revision storage and audited review operations.
+- mdr_rag/contracts.py: additive origin/review_state/conflicts and self_declared status;
+  existing contracts/consumers remain readable.
+- main.py: additive profile extract/show/import/review commands; persisted responses load
+  the exact saved revision. No changes to existing command contracts.
+- mdr_rag/telemetry.py: fixed profile-stage vocabulary; no arbitrary user strings logged.
+- tests/test_device_profile.py: 36 synthetic non-regulatory offline cases; no pre-existing
+  test was changed, removed or weakened.
+- README.md and docs/implementation/{PROGRESS,DECISIONS}.md: commands, semantics,
+  measured gates, compatibility, privacy, limitations and rollback.
+
+Gate coverage: exact structured native PDF/DOCX/TXT/MD evidence and physical PDF page;
+unknown/null and explicit unknown-label abstention; negative/modal/bilingual text; mutually
+contradictory purposes; immutable confirmed/overridden/rejected states with editor/reason,
+no-source manual fallback, competitor/multi-product/YAML/HTML subject rejection, invalid or
+truncated schema with bounded repair, offline/missing model/timeouts/call budget, forged
+quotes/IDs/topic mismatches, scan/no-text, wrong collection/project, five-run idempotence,
+versioned source conflicts, Windows filenames, tampered originals/revisions, stale updates,
+forged manual/evidence changes, failed head publication and redacted event output.
+
+Compatibility/deviations:
+- No automatic user-data or SQL migration; legacy JSON is imported explicitly and retained
+  as untrusted self-declared data. New states use project-scoped content-addressed JSON;
+  Stage 01 SQL ledger and old flat review/applicability input stay unchanged.
+- Typed ProfileDraft/ProfileField enrich the prior generic contracts without rewriting
+  existing consumers. Reviewed profiles are not silently exported to legacy applicability.
+- Streamlit profile editing is deferred to the later reviewer workspace exactly as the
+  Stage 03 specification allows; current Day Three UI/CLI workflows pass regressions.
+- Strict same-span product subject and field-topic cues sacrifice recall, especially across
+  pages, tables and free-form/bilingual descriptions. Native PDF prose is retained with a
+  layout warning; damaged/unreadable/OCR/nested-table evidence abstains. Exact citations
+  and topic cues are not semantic entailment, completeness, expert review or certification.
+- Automatic classification/category remains unknown; manual edits are explicitly attributed.
+  Review does not rewrite source evidence. Re-extraction explicitly resets review on a new
+  child revision; prior reviewed history stays immutable and available.
+- Locking/expected heads prevent ordinary concurrent lost updates. Revision/head writes are
+  atomic per file, not a cross-store transaction; orphan revisions can remain after failure.
+  No automatic cleanup, encryption, authentication or secure deletion is introduced. Audit
+  metadata and device values stay sensitive on local disk. Telemetry IO failure cannot
+  replace a successful extraction or mask its original exception.
+
+Costs and latency: 0 real network/model/API calls, $0 cloud spend, no dependencies or model
+weights installed, no real user dossier parsed or index rebuilt. Native parsing/local IO
+and mocked guarded Ollama calls were exercised. Default extraction requires no inference;
+explicit model path makes at most two logical requests (initial + schema repair), with
+Stage 01 bounded transient retries and shared run limits. 270.41s is test-suite duration,
+not device-processing/model performance. No accuracy/latency benchmark claim is made.
+
+Rollback: revert the Stage 03 Git commit after reviewing dependent work. Preserve all user
+files, ingestion originals, existing indexes, assessment history and ignored profile states.
+The prior application can ignore the new profile directory; no reverse SQL/data migration
+or deletion is required. Export new profile revisions before using an older application
+which has no profile command. Implementation and docs are committed on the explicitly
+requested feature branch; nothing is pushed or deployed.
+
+STAGE_03=PASS. Next stage: docs/day_two_prompts/stages/04_REGULATORY_REGISTRY.md.
+STOP: Stage 04 is not started.

@@ -45,6 +45,20 @@ def main():
     source_view.add_argument("--start", type=int, default=0)
     source_view.add_argument("--end", type=int)
     source_view.add_argument("--context", type=int, default=160)
+    profile = subs.add_parser("profile", help="Preview, save and review evidence-linked device profiles")
+    profile.add_argument("action", choices=["extract", "show", "review", "import"])
+    profile.add_argument("--project-id", default="local")
+    profile.add_argument("--target", help="Exact device name stated in source text")
+    profile.add_argument("--manifest", action="append", default=[], help="Device ingestion manifest SHA256; repeatable")
+    profile.add_argument("--use-model", action="store_true", help="Explicit bounded local Ollama extraction")
+    profile.add_argument("--save", action="store_true", help="Save extraction/import as an immutable revision")
+    profile.add_argument("--revision", help="Revision to show/review, or expected head when saving extraction")
+    profile.add_argument("--file", help="Existing legacy profile JSON to import without modifying it")
+    profile.add_argument("--field")
+    profile.add_argument("--decision", choices=["confirm", "override", "reject"])
+    profile.add_argument("--value")
+    profile.add_argument("--editor")
+    profile.add_argument("--reason")
     ask = subs.add_parser("ask", help="Question-answering with verified source IDs")
     ask.add_argument("question")
     extract = subs.add_parser("extract", help="Draft requirements from ALL chunks on selected PDF pages")
@@ -114,6 +128,36 @@ def main():
         elif args.command == "index":
             audit = run_index(force_reembed=True) if args.force_reembed else run_index()
             print_index_result(audit)
+        elif args.command == "profile":
+            import json
+            from pathlib import Path
+            from mdr_rag.core import STATE
+            from mdr_rag.ingestion import IngestionStore
+            from mdr_rag.device_profile import ProfileStore, extract_profile, review_profile, import_legacy
+            archive = IngestionStore(STATE / "ingestion", args.project_id)
+            profiles = ProfileStore(STATE / "device_profiles", archive)
+            if args.action in {"show", "review"}:
+                if not args.revision:
+                    raise ValueError("--revision is required")
+                draft = profiles.load(args.revision)
+                if args.action == "review":
+                    draft = review_profile(draft, args.field, action=args.decision, value=args.value,
+                                           editor=args.editor or "", reason=args.reason or "")
+            else:
+                if not args.target:
+                    raise ValueError("--target is required")
+                if args.action == "import":
+                    if not args.file or Path(args.file).stat().st_size > 100000:
+                        raise ValueError("Supply a legacy --file up to 100000 bytes")
+                    draft = import_legacy(json.loads(Path(args.file).read_text(encoding="utf-8")), args.project_id, args.target)
+                else:
+                    draft = extract_profile(archive, args.manifest, args.target, use_model=args.use_model)
+            revision = (profiles.save(draft, expected_revision=args.revision)
+                        if args.save or args.action == "review" else args.revision if args.action == "show" else None)
+            if revision:
+                draft = profiles.load(revision)
+            print(json.dumps(dict(revision=revision, profile=draft.model_dump(mode="json"),
+                                  review_questions=draft.questions), ensure_ascii=False, indent=2))
         elif args.command in {"ingest", "source-view"}:
             import json
             from pathlib import Path
