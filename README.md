@@ -7,6 +7,10 @@ See the linked implementation record for input paths, schema and validation resu
 FDA 510(k) research uses a separate cache: `python -m vc_engine fda-search --query
 echocardiography` searches cached records; add `--online` to allow bounded official
 API requests. See the same record for FDA scope, evidence status and limitations.
+Startup JSON profiles, offline comparable ranking and evidence-gap reports use
+`python -m vc_engine profile`, `compare`, and `evidence-gaps`. Start with the
+[synthetic profile example](docs/vc/startup_profile.example.json), review/edit its
+fields, and follow the commands in the implementation record.
 
 The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and multi-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 

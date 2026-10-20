@@ -1,9 +1,8 @@
 # VC implementation record
 
 Implemented on branch `vc-implmentation`, 2026-10-20. This is the single record of
-implemented changes, usage, schema, validation and limitations. Scope is
-`01_DATA_FOUNDATION.md` is recorded first; Task 02 is recorded below. Tasks 03–05
-are not implemented.
+implemented changes, usage, schema, validation and limitations. Task 01 is recorded
+first, followed by Tasks 02 and 03. Tasks 04–05 are not implemented.
 
 ## Changes
 
@@ -369,3 +368,185 @@ Only supplied/fetched fields support relevance reasons. Query text may be
 sensitive; `--online` explicitly sends the provided search terms to the official
 API. API and query snapshots are local and unencrypted; original MDR/VC workflows
 are isolated and retain their previous evidence semantics.
+
+## Task 03 — Startup profiles, comparables and evidence gaps
+
+Implemented on `vc-implmentation`, 2026-10-20. Scope is
+`03_STARTUP_SIMILARITY_AND_CLINICAL_EVIDENCE.md`, using its required structured-JSON
+and offline lexical path. Optional deck/model/vector/publication extensions are
+not enabled. Tasks 04–05 remain out of scope.
+
+### Changes
+
+| File | Implementation |
+| --- | --- |
+| `vc_engine/startup_profile.py` | Typed startup/profile-source/field-anchor/evidence-claim contracts; strict JSON validation; null/unknown handling; exact supporting quotes; content fingerprints and user review attestation; typed comparison and gap reports. |
+| `vc_engine/comparables.py` | Read-only company/FDA-cache candidate generation; explicit lexical vocabulary and baseline weighted ranking; field statuses, source quotes/IDs/links, coverage, uncertainty, separate company/FDA record kinds and exclusion reasons. |
+| `vc_engine/evidence_gaps.py` | Seven startup-specific evidence categories with source status, literal anchored claims, explicit conflicts, recorded human support assessments and limits on local-index absence statements. |
+| `vc_engine/__main__.py` | `profile`, `compare`, `evidence-gaps`; reviewer, database, weights/top-k/scan options; atomic JSON outputs and input/database output-collision protection. |
+| `tests/test_startup_comparables.py` | 28 synthetic test cases covering clinical/modality/population differences, FDA unknown intended use/decision support, provenance, review invalidation, evidence statuses, cache/index absence, configuration, CLI, negation and read-only isolation. |
+| `docs/vc/startup_profile.example.json` | Editable synthetic example, explicitly not a real startup, human annotation or clinical evidence. |
+| `README.md` and this record | Entry points, review workflow, weights, evidence semantics, exact commands, measured results and remaining limits. |
+
+No new dependencies or network requests. Existing CSV/FDA modules and schemas,
+MDR modules, CLI/UI, source archives, Chroma collections and existing tests remain
+unchanged. This path composes Task 01 SQLite/provenance and Task 02 FDA storage
+interfaces. The existing MDR retrieval module is coupled to the MDR collection and
+model runtime, so it is not imported into this independent lexical path. Optional
+hybrid/vector retrieval would require a separate namespace; none is created here.
+
+### Commands and profile review
+
+Run from the repository root with the existing environment:
+
+```powershell
+python -m vc_engine profile --input docs/vc/startup_profile.example.json --output reports/startup_profile.json
+# Review/edit the JSON fields and sources yourself, then record your attestation:
+python -m vc_engine profile --input reports/startup_profile.json --output reports/startup_profile.reviewed.json --reviewer "Your name"
+python -m vc_engine compare --profile reports/startup_profile.reviewed.json --top-k 5 --output reports/comparables.json
+python -m vc_engine evidence-gaps --profile reports/startup_profile.reviewed.json --output reports/evidence_gaps.json
+```
+
+`profile` accepts structured JSON, normalizes whitespace and writes every schema
+field; blank/missing fields are null and listed in `unknown_fields`. Unknown keys,
+wrong scalar/list types, duplicate source IDs, invalid page values, invalid claim
+categories and fabricated/nonliteral quotes fail clearly. Profile fields are:
+`name`, `device_name`, `device_description`, `intended_use`, `clinical_indication`,
+`patient_population`, `input_modality`, `target_user`, `workflow`, `technology`,
+`jurisdiction`, `claimed_regulatory_status`, `funding_stage`, `sources`, and
+`unknown_fields`. Additional explicit fields hold `field_evidence`,
+`evidence_claims`, source-byte hash and review metadata. Input JSON is capped at
+2 MiB; individual text fields at 20000 characters, sources/anchors/claims at 100
+objects per list, and supporting quotes at 1000 characters.
+
+A source has `source_id`, literal `text`, optional `source_url`, physical `page`
+and/or `chunk`, and `origin` (`user_supplied`, `pitch_deck`, `publication`, or
+`official_document`). A field anchor has `field`, `source_id`, and an exact short
+`quote` from that source; the quote must contain the literal field value. This
+supports manually supplied deck/page quotes without pretending automatic deck
+extraction occurred. Source URLs are retained, never fetched in Task 03.
+
+Profiles begin `pending_review`. `--reviewer` records a user-supplied review
+attestation tied to the entire profile fingerprint; it does not independently
+verify claims. Editing a substantive field, source or claim invalidates that
+attestation and returns the profile to pending review. Draft comparison/gap
+previews are permitted, prominently show review status, and warn to review/edit
+before relying on matches. The demo was left pending review; no human reviewer
+was invented. Reports must be separate `.json` paths, protecting profile/config
+inputs and selected/default databases from being overwritten.
+
+### Ranking and audit trail
+
+`compare` defaults to the Task 01 company database and Task 02 FDA cache, opened
+read-only. Use `--db` and `--fda-db` for overrides. Missing indexes are reported
+without creating files or fetching data. Both `--top-k` (1–100, default 5) and
+`--scan-cap` (1–10000 per store, default 10000) are bounded. Runtime counts report
+scanned/generated/eligible/excluded/returned candidates and index/scan truncation.
+Excluded candidates are also capped at top-k; their total and returned counts
+are separate. A same-name startup company is omitted from its own comparables.
+
+Candidate generation uses literal field overlap and a small explicit alias list
+(e.g. CT/computed tomography and echocardiography/ultrasound), excluding generic
+AI/medical/imaging/platform words. It is not a medical ontology. Known lexical
+purpose, indication, modality or population mismatches are excluded from top
+matches and shown separately. Negation/exclusion language abstains to unknown.
+
+Baseline weights are intended use 0.30, clinical indication 0.25, modality 0.20,
+population 0.15 and workflow 0.10. `--weights path/to/weights.json` accepts an
+object with exactly those five keys (`intended_use`, `clinical_indication`,
+`input_modality`, `patient_population`, `workflow`), finite nonnegative values
+and sum 1. The result preserves weights and each field's score contribution.
+
+Match/mismatch/unknown is recorded per feature and regulatory classification.
+Usable known field evidence plus at least half of the target's non-generic
+tokens gives a lexical match; disjoint known tokens give mismatch; partial,
+negated, missing or unsupported dimensions stay unknown. Modality/population
+use their restricted literal vocabulary. The score is the sum of weighted
+target-token coverage for matched fields. Unknown fields contribute zero and
+weights are never renormalized. Coverage sums weights of known match/mismatch
+dimensions; it is not a probability or proof of clinical confidence. Pending
+review or coverage below 0.5 gets `low` confidence; otherwise the label remains
+`unvalidated_heuristic`. No calibrated accuracy/confidence is claimed.
+
+CSV clinical-use-case text supplies intended use/indication as **reported claims**,
+not independent corroboration. Literal modality/population cues retain their
+actual CSV field/row/hash and quote. Unsupported workflow remains unknown.
+FDA device-name cues can supply tentative modality evidence; FDA intended use,
+indication, population and workflow remain unknown because the administrative
+cache does not contain reviewed intended-use documents. Regulatory classification
+comparability stays unknown without a structured jurisdiction-specific reviewed
+startup class; CE/FDA marketing phrases do not imply equivalent classes.
+
+Every result includes actual company/K-number IDs, kind, field statuses, source
+links, exact candidate and profile field quotes/anchors, rationale and uncertainty.
+Companies stay `claimed_only`, with no inferred FDA product linkage. FDA results
+stay cached, never newly verified. A cached record supports a reported
+Substantially Equivalent decision only when its raw returned K-number matches,
+its raw code is `SESE`, its description is `Substantially Equivalent`, and its
+official HTTPS source/fetch-check metadata exists. Missing/other decisions do not
+establish clearance. This is not a predicate, pathway, class or compliance judgment.
+
+### Evidence gaps and source status
+
+`evidence-gaps` inspects the profile's explicitly supplied sources/claims and the
+startup's **exact-name** company rows. It does not borrow evidence from comparable
+companies or assume a startup shares an FDA applicant/product identity. The
+categories are clinical publications, external validation, prospective evidence,
+comparator studies, reimbursement evidence, regulatory documentation, and
+device-specific intended-use details.
+
+- `not_found_in_index`: no supporting item in this local startup-specific scope;
+  explicitly does not assert that evidence is absent in the real world.
+- `claimed_only`: profile/deck assertion or CSV reference. A study/regulatory URL
+  alone does not establish verification or supporting document content.
+- `supported_by_source`: an exact anchored quote from a supplied publication or
+  official document has an explicit human support assessment (`reviewed_by` and
+  `review_note`). This records the supplied assessment, not independent source
+  authentication, study quality or automatic clinical entailment validation.
+- `conflicting`: explicit supporting and contradicting source claims for the same
+  category. No automatic conflict resolution occurs.
+- `needs_review`: an explicit contradicting claim needs resolution.
+
+An `evidence_claims` item names `category`, `source_id`, exact `quote`, and `stance`
+(`supports`/`contradicts`), plus optional reviewer/note. Deck/user-supplied sources
+remain claimed-only even with a review note. The quote, source URL, page/chunk and
+review record are retained in gap evidence. All seven gap statements have an
+explicit status, evidence inventory, suggested review actions and scope limits.
+
+### Validation and limitations
+
+- `.venv/Scripts/python.exe -m pytest -q tests/test_startup_comparables.py tests/test_vc_engine.py tests/test_fda_regulatory.py -p no:cacheprovider --basetemp reports/test-temp-vc-03-initial`: initial 80 passed in 6.09 seconds.
+- `.venv/Scripts/python.exe -m pytest -q tests/test_startup_comparables.py tests/test_vc_engine.py tests/test_fda_regulatory.py -p no:cacheprovider --basetemp reports/test-temp-vc-03-final`: final 84 passed in 8.71 seconds (28 startup, 22 data foundation and 34 FDA cases).
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-vc-03-regression`: 636 passed, 2 skipped in 421.89 seconds. This run collected the original 24 startup cases alongside the existing suite; the final focused run separately covers four later cases and the final profile-evidence/population/configuration changes.
+- `.venv/Scripts/python.exe -m compileall -q vc_engine`, CLI help with `python -S`, and `git diff --check`: passed.
+
+Offline CLI demo, using a clearly synthetic stroke CT startup and the supplied
+company database/cached FDA records:
+
+```powershell
+.venv/Scripts/python.exe -S -m vc_engine profile --input reports/vc_03_startup_input.json --output reports/vc_03_startup_profile.json
+.venv/Scripts/python.exe -S -m vc_engine compare --profile reports/vc_03_startup_profile.json --top-k 5 --output reports/vc_03_comparables.json
+.venv/Scripts/python.exe -S -m vc_engine evidence-gaps --profile reports/vc_03_startup_profile.json --output reports/vc_03_evidence_gaps.json
+```
+
+Measured demo: scanned 99 companies and 3 cached FDA records; generated 7
+candidates, excluded 5, returned 2 company claims (Nicolab and Brainomix), both
+with baseline score/coverage 0.75. These are heuristic text matches, not validated
+clinical equivalents. The profile remained pending review. Six gap categories
+were not found in the inspected startup-specific index; intended-use detail was
+claimed-only. No study, regulatory document, reviewer or gold label was invented.
+All demo/report files remain local under ignored `reports/`. Unit tests also
+verify both queried databases remain byte-identical after comparisons/gap reports.
+
+No new model inference, embeddings, network, API keys, confidential upload, source
+index writes or FDA fetching occurs. Deck extraction, vector/BM25 enhancements,
+the optional clinical-publication table/import and live PubMed ingestion are
+deferred. No human-annotated comparable gold profiles were supplied, so no
+Recall@5/Precision@5 measurements or fabricated labels are provided. Collect at
+least the brief's proposed 10 human-annotated profiles before evaluating retrieval.
+
+Lexical matching can miss synonyms or exclude true comparables. Population cues
+and modality aliases are deliberately narrow. Source quote checks establish
+literal provenance; human review is still responsible for source relevance,
+clinical meaning, device scope, conflicts and study comparability. The comparison
+does not compare performance metrics/AUROC across endpoints or populations.

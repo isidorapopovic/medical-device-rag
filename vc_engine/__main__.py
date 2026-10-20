@@ -52,8 +52,49 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--timeout", type=float, default=15)
         command.add_argument("--retries", type=int, default=2)
         command.add_argument("--cache-hours", type=float, default=24)
+    profile_command = commands.add_parser("profile", help="Normalize editable startup JSON; fields remain unverified")
+    profile_command.add_argument("--input", type=Path, required=True)
+    profile_command.add_argument("--output", type=Path, required=True)
+    profile_command.add_argument("--reviewer", help="Record your review attestation after reviewing/editing all profile fields")
+    compare_command = commands.add_parser("compare", help="Offline company/FDA-cache comparables with field evidence")
+    gaps_command = commands.add_parser("evidence-gaps", help="Offline startup evidence inventory with source status")
+    for command in (compare_command, gaps_command):
+        command.add_argument("--profile", type=Path, required=True)
+        command.add_argument("--output", type=Path, required=True)
+        command.add_argument("--db", type=Path, default=DEFAULT_DB)
+    compare_command.add_argument("--fda-db", type=Path, default=DEFAULT_FDA_DB)
+    compare_command.add_argument("--top-k", type=int, default=5)
+    compare_command.add_argument("--weights", type=Path, help="JSON object containing all five baseline feature weights, summing to 1")
+    compare_command.add_argument("--scan-cap", type=int, default=10000)
     args = parser.parse_args(argv)
     try:
+        if args.command in {"profile", "compare", "evidence-gaps"}:
+            from .ingest import write_report
+            from .startup_profile import load_profile, profile_payload
+            source = args.input if args.command == "profile" else args.profile
+            protected = {source.resolve(), DEFAULT_DB.resolve(), DEFAULT_FDA_DB.resolve()}
+            if args.command != "profile":
+                protected.add(args.db.resolve())
+            if args.command == "compare":
+                protected.add(args.fda_db.resolve())
+                if args.weights:
+                    protected.add(args.weights.resolve())
+            if args.output.resolve() in protected or args.output.suffix.lower() != ".json":
+                raise ValueError("Output must be a separate .json report, not an input/configuration/database path")
+            profile = load_profile(source, reviewer=args.reviewer if args.command == "profile" else None)
+            if args.command == "profile":
+                payload = profile_payload(profile)
+            elif args.command == "compare":
+                from .comparables import compare
+                weights = json.loads(args.weights.read_text(encoding="utf-8-sig")) if args.weights else None
+                payload = asdict(compare(profile, db=args.db, fda_db=args.fda_db, top_k=args.top_k,
+                                         weights=weights, scan_cap=args.scan_cap))
+            else:
+                from .evidence_gaps import evidence_gaps
+                payload = asdict(evidence_gaps(profile, db=args.db))
+            write_report(args.output, payload)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
         if args.command in {"fda-search", "fda-import"}:
             from .regulatory_models import FDAQuery, FetchLimits
             from .regulatory_search import search_precedents
