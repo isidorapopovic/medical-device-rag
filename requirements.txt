@@ -6,6 +6,8 @@ python-dotenv>=1.0,<2
 pydantic>=2.8,<3
 rank-bm25>=0.2.2,<1
 pytest>=8,<10
+# Explicit opt-in openFDA HTTP client; CSV/offline commands remain stdlib-only
+requests>=2.32,<3
 # RAG evaluation and HTML visualizations
 numpy>=1.26,<3
 scikit-learn>=1.5,<2

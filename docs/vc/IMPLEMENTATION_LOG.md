@@ -1,8 +1,9 @@
-# Task 01 implementation record
+# VC implementation record
 
 Implemented on branch `vc-implmentation`, 2026-10-20. This is the single record of
 implemented changes, usage, schema, validation and limitations. Scope is
-`01_DATA_FOUNDATION.md`; tasks 02–05 are not implemented.
+`01_DATA_FOUNDATION.md` is recorded first; Task 02 is recorded below. Tasks 03–05
+are not implemented.
 
 ## Changes
 
@@ -185,3 +186,186 @@ a different relationship. Schema snapshots are last-imported views, not conflict
 resolution or bitemporal truth; retained provenance must be reviewed for conflicts.
 All observations are unverified. SQLite and quality-report publication are separate
 operations; an output error after commit does not undo the database transaction.
+
+## Task 02 — FDA 510(k) regulatory precedent search
+
+Implemented on `vc-implmentation`, 2026-10-20. Scope is
+`02_FDA_REGULATORY_PRECEDENTS.md`. Tasks 03–05 remain out of scope.
+
+### Changes
+
+| File | Implementation |
+| --- | --- |
+| `vc_engine/regulatory_models.py` | Typed FDA queries, fetch limits, `RegulatoryPrecedent`/search results, literal query escaping, valid K-number checks, explicit scope and regulatory warnings. |
+| `vc_engine/fda_client.py` | Opt-in `requests` transport to the fixed official HTTPS endpoint, timeouts, bounded retries/backoff/rate pacing, response-size cap, cache freshness and explicit live/cached page status. |
+| `vc_engine/regulatory_store.py` | Dedicated versioned FDA SQLite cache, normalized records keyed by FDA K-number, complete raw API pages and query parameters, source URLs and fetch/check timestamps. |
+| `vc_engine/regulatory_search.py` | Bounded pagination, deduplication/repeated-page detection, exact field checks, normalized optional fields, deterministic match reasons, live evidence flags and offline cached-record search. |
+| `vc_engine/__main__.py` | Added `fda-search` and `fda-import`, explicit `--online`/`--refresh`, dedicated cache path and configurable request/pagination caps. |
+| `tests/test_fda_regulatory.py` | 34 mock-only test cases covering success/no results, errors/timeouts/retries, missing/invalid IDs/fields, pagination/caps/duplicates, stale/fresh/offline caches, CLI and database isolation. Network is forbidden in these tests. |
+| `requirements.txt` | Explicit `requests>=2.32,<3` dependency for live FDA operations; transport imports remain lazy. |
+| `README.md` and this record | FDA entry points, scope, setup, exact commands, evidence status, validation and limitations. |
+
+No modifications to Task 01 database schema, CSV ingestion/query code, MDR code,
+Chroma indexing, legal/source archives, model settings or existing tests. The
+existing SQLite/report Git ignore rules cover the new cache and demo artifacts.
+
+### Setup and commands
+
+Activate the existing project environment. For a fresh setup:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m vc_engine fda-search --help
+python -m vc_engine fda-import --help
+```
+
+The environment already had `requests 2.34.2`; no installation was needed here.
+Offline commands and Task 01 commands remain usable with `python -S`, without
+site-packages, Ollama or credentials. No API key is embedded, loaded or required
+by this client; it operates within the public unauthenticated API limits.
+
+```powershell
+# Offline by default: searches only previously captured FDA records.
+python -m vc_engine fda-search --query echocardiography --limit 10
+python -m vc_engine fda-import --k-number K251103
+
+# Explicitly allow public API requests. Fresh cached pages are reused.
+python -m vc_engine fda-search --query echocardiography --limit 10 --online
+
+# Force a current official check and capture/cache the returned record.
+python -m vc_engine fda-import --k-number K251103 --online --refresh
+
+# Known structured fields are preferred over broad name matching.
+python -m vc_engine fda-search --applicant "Philips Image Guided Therapy Corporation" --product-code OBJ --limit 1 --online
+python -m vc_engine fda-search --device-name "ACUSON AcuNav Volume Intracardiac Echocardiography(ICE) Catheter" --limit 1 --online
+
+# Separate FDA database and configurable bounds.
+python -m vc_engine fda-search --query echocardiography --online --fda-db data/vc/fda_510k.sqlite --page-size 5 --max-pages 2 --max-records 10 --limit 10 --timeout 10 --retries 1 --cache-hours 24
+```
+
+For an existing company, inspect its local record using Task 01 `search --company`
+and explicitly select an appropriate device-name phrase or known applicant/product
+code for `fda-search`. Company names are not assumed to equal FDA applicants.
+No CSV/company information is transmitted automatically.
+
+Typed API:
+
+```python
+from vc_engine.regulatory_models import FDAQuery, FetchLimits
+from vc_engine.regulatory_search import search_precedents
+
+cached = search_precedents(FDAQuery(query="echocardiography"))
+# Only this explicit online=True permits requests:
+checked = search_precedents(FDAQuery(k_number="K251103"), online=True,
+                           refresh=True, limit=1, limits=FetchLimits(retries=1))
+```
+
+### Cache schema, bounds and evidence semantics
+
+Default FDA storage is `data/vc/fda_510k.sqlite`, separate from
+`data/vc/medtech_vc.sqlite` and every MDR store. Application ID `1447249476` and
+schema version 1 reject incompatible/VC/MDR databases. No implicit migrations of
+other databases occur. Offline mode opens the cache read-only; an absent cache
+returns `cache_miss` with zero requests and does not create a database.
+
+- `fda_records`: K-number primary key; device name, applicant, decision date/code/
+  description, product code, supplied medical specialty, complete original record
+  JSON, actual fetched source URL, `fetched_at`, `checked_at`, retrieval status.
+- `fda_pages`: deterministic hash of search/limit/skip/sort parameters; original
+  complete API payload JSON, source URL, fetch timestamp and retrieval status.
+  Upserts replace current snapshots without duplicating K-numbers or identical
+  page keys. Raw pages preserve source detail that normalized fields omit.
+- Missing/invalid optional fields stay null; unparseable dates remain in raw JSON.
+  Missing or invalid FDA K-numbers are skipped with diagnostics, never synthesized.
+  FDA decision descriptions/codes are retained literally, not converted into
+  marketing or regulatory claims.
+- `--query` is a literal phrase in `device_name`. Known name/applicant/K-number
+  filters use `.exact`; product code uses its native three-letter field and an
+  additional local equality check. All supplied filters are ANDed. Device-name
+  text matching alone does not establish clinical relevance or AI/SaMD status.
+- Default limits: 10 results, page size 10, at most 5 pages/100 received records,
+  2 retries after the initial attempt, 15-second read timeout (connect at most 5
+  seconds), 4 MiB per response, at least 0.3 seconds between request attempts, and
+  24-hour fresh page reuse. The default request cap is 15 attempts per invocation.
+  Hard configurable maxima: page size 1000, 25 pages, 1000 records/results,
+  3 retries, 60-second read timeout. Streamed response size is bounded; requests
+  timeouts are connect/read inactivity limits, not a process-kill wall-time limit.
+- Only connection/timeouts and HTTP 429/500/502/503/504 retry. Numeric Retry-After
+  waits up to 10 seconds are respected; larger/unparseable waits stop with a clear
+  error instead of retrying early. Other HTTP/API failures surface their messages;
+  errors do not silently become empty results or verified cache reads. A genuine
+  `NOT_FOUND` 404 is a cached no-results response.
+- `--refresh` requires `--online`. Fresh page reuse, offline snapshots and stale
+  offline snapshots are all labeled cached and have
+  `verified_by_official_record=false`. Last fetch/check timestamps remain visible;
+  cached reads list no newly checked URLs. Offline matching uses a literal
+  device-name substring and exact structured fields across the stored subset;
+  it can differ from the API's phrase matching and is never an exhaustive search.
+- Only records returned in a live HTTPS response, with a valid returned ID and
+  matching supplied exact fields, get `verified_by_official_record=true` during
+  that invocation. This means the administrative official record was fetched and
+  checked, not that clinical equivalence, clearance strategy or compliance was
+  established. `checked_official_urls` lists URLs actually checked on that run.
+- Repeated pages, response/record/result caps and duplicates are explicit.
+  Results deduplicate by returned K-number; pagination sorts by decision date.
+  New upstream records/tied dates can affect paging; the tool does not claim a
+  transactional snapshot of the live FDA database. A later-page failure may leave
+  earlier successfully captured pages available for an explicit offline search.
+
+### Validation results and checked official URLs
+
+- `.venv/Scripts/python.exe -m pytest -q tests/test_fda_regulatory.py tests/test_vc_engine.py -p no:cacheprovider --basetemp reports/test-temp-vc-02-fda-initial`: 54 passed in 1.53 seconds.
+- `.venv/Scripts/python.exe -m pytest -q tests/test_fda_regulatory.py tests/test_vc_engine.py -p no:cacheprovider --basetemp reports/test-temp-vc-02-fda-complete`: final 56 passed in 3.11 seconds (34 FDA and 22 Task 01 tests).
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-vc-02-fda-regression`: 610 passed, 2 skipped in 279.30 seconds. This run collected the initial 32 FDA cases; the final focused run separately covers two added cases and the final FDA corrections.
+- `.venv/Scripts/python.exe -m compileall -q vc_engine` and `python -S -m vc_engine --help`: passed.
+- The initial sandboxed live call was blocked by connectivity restrictions. The
+  same bounded public API demo succeeded with network permission. Live checks
+  exposed two API differences from the first draft: sort must use a sortable
+  field (`decision_date`, not analyzed `k_number`), and `product_code` has no
+  usable `.exact` subfield. Both were corrected and tested against live records.
+
+Successful live demo commands used `--timeout 10 --retries 0 --online --refresh`:
+
+1. `fda-search --query echocardiography --limit 3 --page-size 3`: one request,
+   3 records of 18 API-reported matches, explicitly truncated. Returned K-numbers:
+   `K251103`, `K212959`, `K203726`. The devices are name matches (including
+   intracardiac catheters); this is not evidence that they are AI/SaMD analogues.
+   Checked at `2026-10-20T21:29:09.227666+00:00`:
+   [official search response](https://api.fda.gov/device/510k.json?search=device_name%3A%22echocardiography%22&limit=3&skip=0&sort=decision_date%3Adesc).
+2. `fda-import --k-number K251103`: live exact lookup confirmed the same returned
+   ID. [Official exact-ID response](https://api.fda.gov/device/510k.json?search=k_number.exact%3A%22K251103%22&limit=1&skip=0&sort=decision_date%3Adesc).
+3. Exact applicant + native product-code filter returned `K251103`:
+   [official filtered response](https://api.fda.gov/device/510k.json?search=applicant.exact%3A%22Philips+Image+Guided+Therapy+Corporation%22+AND+product_code%3A%22OBJ%22&limit=1&skip=0&sort=decision_date%3Adesc).
+4. Exact device-name filter returned `K212959`:
+   [official exact-name response](https://api.fda.gov/device/510k.json?search=device_name.exact%3A%22ACUSON+AcuNav+Volume+Intracardiac+Echocardiography%5C%28ICE%5C%29+Catheter%22&limit=1&skip=0&sort=decision_date%3Adesc).
+5. Offline API/CLI reads returned the three stored search matches with zero
+   requests, empty newly checked URLs, cached status and all verification flags
+   false. FDA K-number upserts reuse stored entities without touching Task 01.
+
+Local ignored demo artifacts: `reports/fda_search_live_snapshot.json` (the saved
+original live API page and fetch timestamp, not a new check),
+`reports/fda_exact_import_live.json`, `reports/fda_exact_filters_live.json`,
+`reports/fda_device_name_live.json`, and `reports/fda_search_offline.json`.
+
+Official documentation inspected:
+[overview](https://open.fda.gov/apis/device/510k/),
+[fields](https://open.fda.gov/apis/device/510k/searchable-fields/),
+[query syntax](https://open.fda.gov/apis/query-syntax/),
+[pagination parameters](https://open.fda.gov/apis/query-parameters/), and
+[usage limits](https://open.fda.gov/apis/authentication/).
+
+### Regulatory limits
+
+The MVP covers **510(k) administrative research precedents only**, excluding
+De Novo and PMA. It is not a complete authorized-device inventory. 510(k)
+clearance is not FDA approval; similarity is not substantial equivalence or a
+legally valid predicate; US clearance does not establish EU CE marking.
+
+No clinical intended-use comparison, pathway/classification/compliance judgment,
+summary-PDF download, OCR, document indexing or semantic model ranking is performed.
+The optional summary-download phase is deferred; results explicitly state that no
+decision-summary/indications-for-use document has been retrieved or compared.
+Only supplied/fetched fields support relevance reasons. Query text may be
+sensitive; `--online` explicitly sends the provided search terms to the official
+API. API and query snapshots are local and unencrypted; original MDR/VC workflows
+are isolated and retain their previous evidence semantics.
