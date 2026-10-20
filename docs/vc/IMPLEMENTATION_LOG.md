@@ -2,7 +2,7 @@
 
 Implemented on branch `vc-implmentation`, 2026-10-20. This is the single record of
 implemented changes, usage, schema, validation and limitations. Task 01 is recorded
-first, followed by Tasks 02 and 03. Tasks 04–05 are not implemented.
+first, followed by Tasks 02, 03 and 04. Task 05 is not implemented.
 
 ## Changes
 
@@ -550,3 +550,208 @@ and modality aliases are deliberately narrow. Source quote checks establish
 literal provenance; human review is still responsible for source relevance,
 clinical meaning, device scope, conflicts and study comparability. The comparison
 does not compare performance metrics/AUROC across endpoints or populations.
+
+## Task 04 — Investment comparables, terminology and document catalog
+
+Implemented on `vc-implmentation`, 2026-10-21 (Europe/Budapest). Scope is
+`04_VC_INVESTMENTS_AND_TERMINOLOGY.md`. Task 05 remains out of scope.
+
+### Changes
+
+| File | Implementation |
+| --- | --- |
+| `data/vc/vc_terms.yaml` | Human-editable registry with all 31 requested seed terms, definitions, aliases, categories, units, formula documentation/caveats and misinterpretations; all seeds are draft. |
+| `data/vc/vc_terms.schema.json` | Published JSON Schema for registry/term/formula structure, categories/units and review metadata. |
+| `vc_engine/terms.py` | Typed lookup/search API; safe YAML/JSON loading; duplicate ID/alias/key checks; formula AST and unit checks without evaluating expressions; explicit review metadata validation. |
+| `vc_engine/investment_comparables.py` | Read-only investor/company relationship reports; normalized-key join audits; ambiguity flags; specialty/indication/geography/stage/product filters; separate round/check/cumulative amounts; actual field provenance and missing-data notes. |
+| `vc_engine/vc_documents.py` | Unverified catalog API; separate opt-in public HTTPS downloads; bounded redirects/time/size; checksummed local files; per-attempt manifests; optional local PDF/DOCX/TXT extraction with preserved parser provenance/failures. |
+| `vc_engine/__main__.py` | `terms list/show/search/validate`, `investment-comparables`, `vc-documents`, `vc-fetch-document`; optional integration with Task 03 comparable-company IDs. |
+| `tests/test_vc_investments_terms.py` | 38 synthetic/mock-only cases covering terminology, schema/formulas/review, ambiguous joins, money separation, filters, catalog limits, downloads/redirects/failures, extraction, CLI, read-only behavior and profile integration. |
+| `requirements.txt` | Explicit `PyYAML>=6,<7`; YAML loads only for terminology operations. |
+| `README.md` and this record | Entry points, editing/review workflow, exact commands, results and limits. |
+
+No schema migrations or changes to existing CSV/FDA ingestion, startup comparison,
+MDR code, Streamlit, Chroma collections or source archives. New query reports use
+the existing VC database read-only. Downloaded files and attempt/extraction records
+use the already ignored `data/vc/downloads/`, separate from MDR source storage.
+
+### Setup and editable terminology
+
+The environment already had PyYAML 6.0.3. For a fresh setup:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m vc_engine terms validate
+python -m vc_engine terms list
+python -m vc_engine terms show 'MOIC'
+python -m vc_engine terms show 'pre-money'
+python -m vc_engine terms search 'revenue'
+python -m vc_engine terms show IRR --registry data/vc/vc_terms.yaml
+```
+
+`terms show` resolves IDs, labels and aliases case-insensitively after Unicode and
+whitespace normalization. Unknown terms fail clearly with exit code 1; search can
+return an empty list. Every response carries the educational/not-advice warning.
+All seeds are `draft`; the implementation does not invent a human reviewer.
+
+To add a term, edit the YAML and provide `id`, `label`, `aliases`, `definition`,
+`category`, `formula` (null if inapplicable), `unit`,
+`common_misinterpretations`, and `status`. Optional `references` store source
+links. To mark reviewed, a human must set `status: reviewed` and supply
+`reviewed_by`, `review_note`, and an ISO `reviewed_on` date. Both quoted and
+unquoted YAML ISO dates work. Re-review substantive definition/formula changes;
+the status is a supplied human annotation, not authenticated expert approval.
+Run `terms validate` before committing registry changes.
+
+The schema lists supported categories/units. Runtime validation additionally
+rejects duplicate case-insensitive IDs, cross-term label/alias collisions,
+duplicate aliases within a term, duplicate YAML mapping keys and unsupported
+fields/statuses. A term's own ID and label may intentionally name the same term.
+YAML uses a safe loader; custom object tags are not executed. A JSON registry is
+also supported through `--registry`, including with site-packages disabled.
+
+A non-null formula has an `expression`, `variables` mapping names to units, and
+nonempty `caveats`. Validation allows variables, bounded numeric constants,
+parentheses and `+ - * /`; function calls, attributes, undeclared variables,
+incompatible dimensional arithmetic and literal division by zero fail. Currency,
+time and share-count dimensions are checked; business semantics, currency
+conversion, period alignment and real document mechanics still require expert
+review. **Expressions are never executed and no financial metrics are calculated.**
+Missing inputs cannot become invented valuations, runway, returns or check sizes.
+
+Pre/post-money terms explicitly limit simplified priced-round models and mention
+convertibles/option-pool complications. IRR is annualized and date-sensitive;
+MOIC is a multiple without cash-flow timing. ARR is not annual revenue. Fund
+metrics distinguish realized distributions from residual value and gross/net
+bases. Clinical/regulatory definitions do not grant validation, clearance,
+CE marking or reimbursement. Seed definitions use the task brief and educational
+context; selected official references checked include
+[SEC startup securities](https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/common-startup-securities),
+[FDA SaMD](https://www.fda.gov/medical-devices/digital-health-center-excellence/software-medical-device-samd),
+and [EMA medical devices](https://www.ema.europa.eu/en/human-regulatory-overview/medical-devices).
+
+### Investment comparable queries and joins
+
+```powershell
+python -m vc_engine investment-comparables --company Gleamer
+python -m vc_engine investment-comparables --specialty radiology --product-category SaMD
+python -m vc_engine investment-comparables --indication fracture --country France --stage 'Series B'
+python -m vc_engine investment-comparables --investor 'Heal Capital' --investor-country Germany --limit 20 --offset 0
+python -m vc_engine investment-comparables --profile reports/vc_03_startup_profile.json --top-k 5
+```
+
+Typed API: `query_investments(db=..., filters=InvestmentFilters(...))`, or
+`investment_comparables(connection, filters, company_ids=...)`. Results include
+investor/company IDs and names, technology/product/use case, company and investor
+countries, source URLs, observation date, literal relationship/verification text,
+stage/date (including original partial date text), amount type, disclosure,
+missing-data/uncertainty notes and actual CSV field/row/hash provenance.
+
+Country, investor country, stage, company and investor filters are normalized
+exact matches. Specialty searches company clinical category and investment
+product category; indication searches the joined company clinical use case.
+Product-category/keyword filters are literal substrings. Country means company
+headquarters; investor country is separate and is never substituted. Unknown
+fields do not satisfy a filter. All supplied filters are ANDed. Limit is 1–1000,
+offset is nonnegative; total matching rows are reported before pagination.
+
+The join uses exactly the Task 01 Unicode/whitespace/case-normalized company key.
+Original `source_rows` from the company catalog are audited for conflicting
+nonempty countries or selected products under that key. Case/spacing variants
+alone join normally. Conflicting country/product records yield `ambiguous_name`,
+show source rows/hashes for review and withhold joined company facts/cumulative
+funding. Multiple products or historical changes may be legitimate; they still
+need review rather than an automatic identity decision. Historical conflicting
+rows remain flagged. A missing company profile yields `no_company_profile`;
+inconsistent stored keys yield `key_mismatch`. No fuzzy/alias/subsidiary merges,
+automatic collision resolution or rewriting of Task 01's normalized identities
+is performed. Inspect/disambiguate source identities before relying on a join.
+
+Three separate amount objects carry currency, source URL and as-of date:
+`reported_total_round_amount`, `individual_fund_check`, and
+`company_cumulative_funding`. Round/check values come only from their separate
+investment columns. Cumulative funding comes only from an unambiguous company
+table join, with the reported funding source/date; it is not audited data. An
+undisclosed check remains null even when a full round total exists. No ownership,
+valuation, fund participation or missing amount is inferred.
+
+`--profile` restricts relationships to Task 03's returned comparable **company**
+IDs, retaining profile review/heuristic warnings. FDA device IDs are not treated
+as company IDs; fund catalog entries do not create relationships. An empty
+intersection is a valid result and does not trigger fuzzy matches.
+
+### Catalog browsing and separate document fetching
+
+```powershell
+python -m vc_engine vc-documents --limit 100
+python -m vc_engine vc-documents --source-id SRC001
+python -m vc_engine vc-documents --query NAV --fund 'Molten Ventures' --priority High
+# Separate explicit public download; never run during basic ingest/catalog queries:
+python -m vc_engine vc-fetch-document --source-id SRC001 --online
+# Optional local text extraction, never OCR or financial-fact extraction:
+python -m vc_engine vc-fetch-document --source-id SRC001 --online --extract --timeout 15 --max-bytes 20971520
+```
+
+`query_catalog`/`vc-documents` display original source IDs, titles, direct/landing
+URLs, expected extractable fields, reported verification text, priority, format,
+observation text, notes and source-row provenance. The status remains
+`unverified_link_catalog`; expected fields are not extracted values and a CSV
+verification claim is not a performed source check. These queries never fetch or
+inspect content, and never create NAV, fund returns, valuations or checks.
+
+`fetch_document`/`vc-fetch-document` require explicit `online=True`/`--online` and
+a nonblank catalog source ID. Public HTTPS only, without URL credentials or
+nonstandard ports; DNS/private/loopback destinations and unsafe redirects are
+rejected. At most 3 redirects/4 HTTP requests, default 15-second connect/read
+inactivity/body checks (connect at most 5 seconds; configurable up to 60), and
+20 MiB maximum are allowed. No automatic scraping, credential login or retries.
+DNS screening is a guard for public research URLs, not network isolation against
+adversarial DNS rebinding; use trusted public catalog entries.
+
+Every valid fetch invocation creates a unique attempt manifest under
+`data/vc/downloads/attempts/`, including URL, HTTP/redirect log, attempted/observed
+timestamps, catalog observation date, status, errors, checksum/byte size and
+extraction status/errors. Failures retain their attempt log and never become
+financial facts. Successful bytes are stored by SHA-256 under `files/` and
+identical repeated downloads reuse the same content file while logging each
+attempt. The source catalog/database is not modified or promoted to verified.
+
+`--extract` composes the existing public `mdr_rag.document_parsers.parse_document`
+for native PDF/DOCX/TXT only, with OCR disabled. It writes separate extraction
+JSON under `extractions/`, retaining parser units, physical PDF pages or text/
+DOCX locators, literal text, flags and diagnostics. Unsupported HTML/index pages,
+scans or extraction failures remain explicit; no summary or numeric financial
+facts are invented. CLI exits nonzero for download/extraction failures or OCR
+requirements. No extracted content enters MDR/VC vector collections automatically.
+
+### Validation and measured offline output
+
+- `.venv/Scripts/python.exe -m pytest -q tests/test_vc_investments_terms.py -p no:cacheprovider --basetemp reports/test-temp-vc-04-initial`: 35 passed in 3.59 seconds.
+- `.venv/Scripts/python.exe -m pytest -q tests/test_vc_investments_terms.py -p no:cacheprovider --basetemp reports/test-temp-vc-04-final`: final 38 passed in 5.23 seconds.
+- `.venv/Scripts/python.exe -m pytest -q tests/test_vc_investments_terms.py tests/test_vc_engine.py tests/test_fda_regulatory.py tests/test_startup_comparables.py -p no:cacheprovider --basetemp reports/test-temp-vc-04-final-focused`: final 122 passed in 8.45 seconds.
+- `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-vc-04-regression`: 675 passed, 2 skipped in 341.56 seconds. This run collected the initial 35 Task 04 cases; the final focused run separately covers three added cases and the final validation/provenance/input corrections.
+- Manual JSON Schema validation (`jsonschema.Draft202012Validator.check_schema` and validation of the YAML payload): schema and all 31 seed terms passed. The already installed library was used only for this independent check, not added as a runtime dependency.
+- `.venv/Scripts/python.exe -m compileall -q vc_engine` and `git diff --check`: passed. Catalog/investment CLI demos also passed using `python -S`, without site-packages, network or Ollama. Default YAML terminology needs PyYAML; JSON registries remain stdlib-compatible.
+
+Offline CLI demo artifacts under ignored `reports/`: `vc_04_terms.json`,
+`vc_04_moic.json`, `vc_04_irr.json`, `vc_04_investments.json`,
+`vc_04_catalog.json`, `vc_04_profile_investments.json`.
+
+Measured supplied-data results: 31 draft terms; 50 reported investment
+relationships; 66 catalog links. One investment-company name joins the company
+catalog (Gleamer), 49 have no company profile, and zero keys have conflicting
+country/product rows in these files. All 50 individual check amounts remain null.
+The Gleamer example retains a reported EUR 27,000,000 round and separately
+reported USD 45,000,000 cumulative funding, with their respective source URLs and
+as-of metadata; the individual investor check is null. Neither amount is independently
+verified or converted between currencies. The earlier synthetic CT startup's
+Task 03 comparable companies have zero linked relationships in this investment
+file; no participation is inferred to fill that gap.
+
+No live VC document download was performed in this task. Download and optional
+extraction behavior was demonstrated only with synthetic/mock HTTP and text,
+including failures; no real report contents, returns, NAV, valuations or investor
+checks have been verified. Glossary seeds need human expert review. Company-name
+collisions can reflect legitimate history; conservative flags are not findings of
+fraud or proof of separate legal identities. Reports are research inventories,
+not investment recommendations, legal/accounting advice or verified deal analysis.

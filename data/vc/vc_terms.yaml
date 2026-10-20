@@ -1,0 +1,317 @@
+# Educational draft entries. Review definitions, units and caveats before use.
+# Formula expressions are validated documentation, NEVER executable calculations.
+schema_version: 1
+terms:
+  - id: pre_money_valuation
+    label: Pre-money valuation
+    aliases: [pre money, pre-money]
+    definition: Company equity valuation immediately before new financing in a simple priced round, excluding the newly invested cash.
+    category: valuation
+    formula:
+      expression: post_money_valuation - funding_round_amount
+      variables: {post_money_valuation: currency, funding_round_amount: currency}
+      caveats: [Same currency and round; convertible securities and option-pool changes require expert review.]
+    unit: currency
+    common_misinterpretations: [Not enterprise value or the amount invested; simplified priced-round mechanics may not describe actual documents.]
+    status: draft
+  - id: post_money_valuation
+    label: Post-money valuation
+    aliases: [post money, post-money]
+    definition: Pre-money equity valuation plus new financing in a simplified priced round.
+    category: valuation
+    formula:
+      expression: pre_money_valuation + funding_round_amount
+      variables: {pre_money_valuation: currency, funding_round_amount: currency}
+      caveats: [Same currency; convertibles and option-pool mechanics can change dilution and economic ownership.]
+    unit: currency
+    common_misinterpretations: [Not always a reliable ownership denominator; a SAFE valuation cap is not automatically an agreed company valuation.]
+    status: draft
+  - id: funding_round_amount
+    label: Funding round amount
+    aliases: [round total, round size]
+    definition: Total reported capital raised in one identified financing round, with currency, instrument scope and date.
+    category: financing
+    formula: null
+    unit: currency
+    common_misinterpretations: [A full round amount is not the individual investor check or cumulative funding.]
+    status: draft
+  - id: investor_check_size
+    label: Investor check size
+    aliases: [fund check, check size, cheque size]
+    definition: Separately disclosed contribution of one identified investor to a financing round.
+    category: financing
+    formula: null
+    unit: currency
+    common_misinterpretations: [Often undisclosed; never substitute round size or divide a round equally between investors.]
+    status: draft
+  - id: total_funding_raised
+    label: Total funding raised
+    aliases: [cumulative funding, total reported funding]
+    definition: Cumulative reported company financing across its funding history, with a stated source, currency and as-of date.
+    category: financing
+    formula: null
+    unit: currency
+    common_misinterpretations: [Not current cash or an audited balance; source coverage, instruments and currencies can differ.]
+    status: draft
+  - id: ownership_percentage
+    label: Ownership percentage
+    aliases: [equity stake]
+    definition: Share of company equity held on a stated issued-share or fully diluted basis at a stated date.
+    category: ownership
+    formula:
+      expression: 100 * investor_shares / total_shares
+      variables: {investor_shares: shares, total_shares: shares}
+      caveats: [Positive denominator; numerator and denominator must use the same share and dilution basis.]
+    unit: percentage
+    common_misinterpretations: [Voting and economic ownership may differ; round participation alone does not reveal ownership.]
+    status: draft
+  - id: dilution
+    label: Dilution
+    aliases: [ownership dilution]
+    definition: Relative reduction in an existing holder's ownership percentage after new equity issuance, using a consistent share basis.
+    category: ownership
+    formula:
+      expression: 100 * (1 - ownership_after / ownership_before)
+      variables: {ownership_after: percentage, ownership_before: percentage}
+      caveats: [Positive starting ownership; distinguish relative percentage reduction from percentage-point change.]
+    unit: percentage
+    common_misinterpretations: [A lower ownership percentage does not alone establish lower economic value.]
+    status: draft
+  - id: runway_months
+    label: Runway months
+    aliases: [cash runway]
+    definition: Estimated months of cash remaining under a coherent positive net monthly cash-burn assumption.
+    category: operations
+    formula:
+      expression: available_cash / net_monthly_burn
+      variables: {available_cash: currency, net_monthly_burn: currency_per_month}
+      caveats: [Use unrestricted cash and positive net burn on the same currency/date basis; changing burn invalidates a constant-burn estimate.]
+    unit: months
+    common_misinterpretations: [Unknown cash or burn does not imply zero runway; zero or negative burn is not a meaningful denominator.]
+    status: draft
+  - id: burn_rate
+    label: Burn rate
+    aliases: [cash burn, net burn]
+    definition: Net monthly cash outflow after inflows; gross burn instead measures outflows before inflows and must be labeled separately.
+    category: operations
+    formula:
+      expression: monthly_cash_outflows - monthly_cash_inflows
+      variables: {monthly_cash_outflows: currency_per_month, monthly_cash_inflows: currency_per_month}
+      caveats: [State gross versus net, currency, cash-flow scope and measurement period.]
+    unit: currency_per_month
+    common_misinterpretations: [Accounting loss is not necessarily net cash burn; gross and net burn are different measures.]
+    status: draft
+  - id: ARR
+    label: ARR
+    aliases: [annual recurring revenue]
+    definition: Annualized recurring contract revenue on a specified recurring-revenue policy and measurement date.
+    category: operations
+    formula: null
+    unit: currency_per_year
+    common_misinterpretations: [Not total annual revenue, cash collections or guaranteed future revenue; one-off services are not automatically recurring.]
+    status: draft
+  - id: TAM
+    label: TAM
+    aliases: [total addressable market]
+    definition: Estimated total demand opportunity for a stated segment and geography under explicit sizing and time assumptions.
+    category: market
+    formula: null
+    unit: currency
+    common_misinterpretations: [A market estimate is not current company revenue or evidence of achievable market share; specify the time basis.]
+    status: draft
+  - id: SAM
+    label: SAM
+    aliases: [serviceable available market]
+    definition: Portion of the stated total market within the product and geographic scope the business can serve.
+    category: market
+    formula: null
+    unit: currency
+    common_misinterpretations: [Not automatically the entire TAM; use consistent segment, currency and time assumptions.]
+    status: draft
+  - id: SOM
+    label: SOM
+    aliases: [serviceable obtainable market]
+    definition: Estimated realistically obtainable opportunity within a stated horizon, channel and competitive context.
+    category: market
+    formula: null
+    unit: currency
+    common_misinterpretations: [Not a validated revenue forecast; an arbitrary fraction of TAM does not establish attainability.]
+    status: draft
+  - id: MOIC
+    label: MOIC
+    aliases: [multiple on invested capital, investment multiple]
+    definition: Investment proceeds plus remaining value relative to invested capital, specifying gross or net scope.
+    category: fund_performance
+    formula:
+      expression: (realized_proceeds + remaining_value) / invested_capital
+      variables: {realized_proceeds: currency, remaining_value: currency, invested_capital: currency}
+      caveats: [Positive denominator; specify valuation date, gross/net basis and consistent cash-flow scope.]
+    unit: multiple
+    common_misinterpretations: [MOIC does not capture cash-flow timing and is not IRR; unrealized value is not distributed cash.]
+    status: draft
+  - id: IRR
+    label: IRR
+    aliases: [internal rate of return]
+    definition: Annualized money-weighted return considering dated cash flows; calculation conventions and cash-flow scope must be stated.
+    category: fund_performance
+    formula: null
+    unit: annualized_percentage
+    common_misinterpretations: [Not MOIC; some cash-flow patterns have multiple or no meaningful solutions; gross/net and financing effects matter.]
+    status: draft
+  - id: TVPI
+    label: TVPI
+    aliases: [total value to paid-in capital]
+    definition: Fund residual value plus distributions relative to paid-in capital on a stated reporting basis.
+    category: fund_performance
+    formula:
+      expression: (residual_value + distributions) / paid_in_capital
+      variables: {residual_value: currency, distributions: currency, paid_in_capital: currency}
+      caveats: [Positive paid-in capital; align valuation date, cash flows and net/gross reporting basis.]
+    unit: multiple
+    common_misinterpretations: [Residual value is not cash returned; do not compare inconsistent fund reporting conventions.]
+    status: draft
+  - id: DPI
+    label: DPI
+    aliases: [distributions to paid-in capital]
+    definition: Fund distributions relative to paid-in capital under a specified reporting convention.
+    category: fund_performance
+    formula:
+      expression: distributions / paid_in_capital
+      variables: {distributions: currency, paid_in_capital: currency}
+      caveats: [Positive denominator; identify cash versus in-kind distributions and the reporting basis.]
+    unit: multiple
+    common_misinterpretations: [Excludes residual investment value; a catalog of reports is not evidence of an actual DPI value.]
+    status: draft
+  - id: RVPI
+    label: RVPI
+    aliases: [residual value to paid-in capital]
+    definition: Remaining fund investment value relative to paid-in capital at a stated valuation date.
+    category: fund_performance
+    formula:
+      expression: residual_value / paid_in_capital
+      variables: {residual_value: currency, paid_in_capital: currency}
+      caveats: [Positive denominator; residual valuation is an estimate on a stated reporting basis.]
+    unit: multiple
+    common_misinterpretations: [Unrealized value is not distributions or guaranteed exit proceeds.]
+    status: draft
+  - id: SAFE
+    label: SAFE
+    aliases: [simple agreement for future equity]
+    definition: Contract for a possible future equity interest upon specified events; rights depend on the actual instrument.
+    category: deal_terms
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Not automatically current equity or a convertible loan; a valuation cap is not necessarily current company value.]
+    status: draft
+    references: [https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/common-startup-securities]
+  - id: convertible_note
+    label: Convertible note
+    aliases: [convertible loan]
+    definition: Debt instrument that can convert into another security under its contractual conditions.
+    category: deal_terms
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Not identical to a SAFE; interest, maturity, conversion and repayment provisions need document review.]
+    status: draft
+    references: [https://www.sec.gov/resources-small-businesses/capital-raising-building-blocks/common-startup-securities]
+  - id: liquidation_preference
+    label: Liquidation preference
+    aliases: [liquidation priority]
+    definition: Contractual distribution priority and entitlement for a security in specified exit or liquidation events.
+    category: deal_terms
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [A stated multiple does not describe participation, seniority, caps or the entire payout waterfall.]
+    status: draft
+  - id: pro_rata_rights
+    label: Pro rata rights
+    aliases: [participation rights]
+    definition: Contractual rights to participate in later financings, often to preserve a specified ownership basis.
+    category: deal_terms
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Rights are not proof that the investor actually participated or that every later financing is covered.]
+    status: draft
+  - id: lead_investor
+    label: Lead investor
+    aliases: [round lead]
+    definition: Investor reported to coordinate or lead a financing, with responsibilities dependent on the deal.
+    category: financing
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Being named lead does not establish the largest check, sole participation or a specific ownership stake.]
+    status: draft
+  - id: seed_round
+    label: Seed round
+    aliases: [seed financing]
+    definition: Early-stage financing label whose size, instrument and maturity expectations vary by company and market.
+    category: company_stage
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Not a fixed amount or assurance of clinical validation, revenue or regulatory clearance.]
+    status: draft
+  - id: series_a
+    label: Series A
+    aliases: [series a financing]
+    definition: Financing-stage label often used for an early institutional equity round; actual terms and stage definitions vary.
+    category: company_stage
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Stage alone does not establish valuation, traction, clinical evidence or instrument rights.]
+    status: draft
+  - id: cap_table
+    label: Cap table
+    aliases: [capitalization table, capitalisation table]
+    definition: Dated record of ownership interests and relevant securities on a specified issued or fully diluted basis.
+    category: ownership
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [An investor list is not a cap table; options and convertibles require explicit treatment.]
+    status: draft
+  - id: clinical_validation
+    label: Clinical validation
+    aliases: [clinical performance validation]
+    definition: Assessment of clinical performance for the specified intended use, population, workflow and endpoints.
+    category: clinical
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [A pitch claim or high AUROC alone does not establish external or prospective validation or regulatory conformity.]
+    status: draft
+  - id: regulatory_clearance
+    label: Regulatory clearance
+    aliases: [FDA clearance, 510k clearance]
+    definition: Device-specific regulatory decision commonly referring to the US FDA 510(k) pathway; identify the actual agency, product and pathway.
+    category: regulatory
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [510(k) clearance is not FDA approval, an EU CE mark or clearance of every product made by a company.]
+    status: draft
+  - id: CE_marking
+    label: CE marking
+    aliases: [CE mark]
+    definition: Mark indicating conformity with applicable EU requirements following the relevant conformity-assessment process.
+    category: regulatory
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Not FDA clearance or guaranteed reimbursement; the applicable device scope and documentation must be checked.]
+    status: draft
+    references: [https://www.ema.europa.eu/en/human-regulatory-overview/medical-devices]
+  - id: reimbursement
+    label: Reimbursement
+    aliases: [payer reimbursement]
+    definition: Payment arrangements for a technology or associated service under a particular payer, indication, jurisdiction and setting.
+    category: clinical
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Regulatory authorization alone does not establish coverage, a billing code, payment level or commercial adoption.]
+    status: draft
+  - id: SaMD
+    label: SaMD
+    aliases: [software as a medical device]
+    definition: Software with a medical purpose that performs that purpose without being part of a hardware medical device, subject to the applicable jurisdiction.
+    category: regulatory
+    formula: null
+    unit: not_applicable
+    common_misinterpretations: [Not every health or AI application is SaMD; this label alone does not determine risk class or authorization.]
+    status: draft
+    references: [https://www.fda.gov/medical-devices/digital-health-center-excellence/software-medical-device-samd]

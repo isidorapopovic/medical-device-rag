@@ -11,6 +11,11 @@ Startup JSON profiles, offline comparable ranking and evidence-gap reports use
 `python -m vc_engine profile`, `compare`, and `evidence-gaps`. Start with the
 [synthetic profile example](docs/vc/startup_profile.example.json), review/edit its
 fields, and follow the commands in the implementation record.
+The editable [VC glossary](data/vc/vc_terms.yaml) is available through `python -m
+vc_engine terms list` and `terms show MOIC`. `investment-comparables` reports
+separate round/check/cumulative amounts; `vc-documents` reads the unverified link
+catalog. Full document downloads require the separate `vc-fetch-document --online`
+command. See the implementation record for filters, review rules and limits.
 
 The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and multi-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 

@@ -66,8 +66,78 @@ def main(argv: list[str] | None = None) -> int:
     compare_command.add_argument("--top-k", type=int, default=5)
     compare_command.add_argument("--weights", type=Path, help="JSON object containing all five baseline feature weights, summing to 1")
     compare_command.add_argument("--scan-cap", type=int, default=10000)
+    from .terms import DEFAULT_TERMS
+    terms = commands.add_parser("terms", help="Human-editable educational VC glossary; formulas are not calculations")
+    term_commands = terms.add_subparsers(dest="term_action", required=True)
+    term_list = term_commands.add_parser("list")
+    term_show = term_commands.add_parser("show")
+    term_show.add_argument("term")
+    term_search = term_commands.add_parser("search")
+    term_search.add_argument("query")
+    term_validate = term_commands.add_parser("validate")
+    for command in (term_list, term_show, term_search, term_validate):
+        command.add_argument("--registry", type=Path, default=DEFAULT_TERMS)
+    investments = commands.add_parser("investment-comparables", help="Read-only reported investment relationships and conservative company joins")
+    for name in ("specialty", "indication", "country", "investor-country", "stage", "product-category", "company", "investor", "keyword"):
+        investments.add_argument("--" + name)
+    investments.add_argument("--profile", type=Path, help="Restrict relationships to Task 03 comparable-company IDs")
+    investments.add_argument("--top-k", type=int, default=5)
+    investments.add_argument("--fda-db", type=Path, default=DEFAULT_FDA_DB)
+    documents = commands.add_parser("vc-documents", help="Unverified document link catalog; never fetches content")
+    for name in ("query", "fund", "priority", "source-id"):
+        documents.add_argument("--" + name)
+    for command in (investments, documents):
+        command.add_argument("--db", type=Path, default=DEFAULT_DB)
+        command.add_argument("--limit", type=int, default=100)
+        command.add_argument("--offset", type=int, default=0)
+    from .vc_documents import DEFAULT_DOWNLOADS
+    fetch = commands.add_parser("vc-fetch-document", help="Separate explicit public-document download; never creates financial facts")
+    fetch.add_argument("--source-id", required=True)
+    fetch.add_argument("--db", type=Path, default=DEFAULT_DB)
+    fetch.add_argument("--output-dir", type=Path, default=DEFAULT_DOWNLOADS)
+    fetch.add_argument("--online", action="store_true")
+    fetch.add_argument("--extract", action="store_true", help="Explicit local PDF/DOCX/TXT extraction, no OCR or indexing")
+    fetch.add_argument("--timeout", type=float, default=15)
+    fetch.add_argument("--max-bytes", type=int, default=20 * 1024 * 1024)
     args = parser.parse_args(argv)
     try:
+        if args.command == "terms":
+            from .terms import DISCLAIMER, load_terms, lookup_term, search_terms
+            if args.term_action == "show":
+                payload = {"term": asdict(lookup_term(args.term, path=args.registry)), "disclaimer": DISCLAIMER}
+            elif args.term_action == "validate":
+                payload = {"schema_version": 1, "valid": True, "terms_count": len(load_terms(args.registry)), "disclaimer": DISCLAIMER}
+            else:
+                payload = {"terms": [asdict(term) for term in search_terms(args.query if args.term_action == "search" else None, path=args.registry)], "disclaimer": DISCLAIMER}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "investment-comparables":
+            from .investment_comparables import InvestmentFilters, query_investments
+            identifiers, profile_report = None, None
+            if args.profile:
+                from .startup_profile import load_profile
+                from .comparables import compare
+                profile_report = compare(load_profile(args.profile), db=args.db, fda_db=args.fda_db, top_k=args.top_k)
+                identifiers = {item.source_id for item in profile_report.results if item.kind == "company"}
+            filters = InvestmentFilters(**{name: getattr(args, name) for name in InvestmentFilters.__dataclass_fields__})
+            payload = asdict(query_investments(db=args.db, filters=filters, company_ids=identifiers))
+            if profile_report:
+                payload["profile_comparison"] = asdict(profile_report)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "vc-documents":
+            from .vc_documents import query_catalog
+            entries = query_catalog(db=args.db, keyword=args.query, fund=args.fund, priority=args.priority,
+                                    source_id=args.source_id, limit=args.limit, offset=args.offset)
+            print(json.dumps({"results": [asdict(item) for item in entries], "status": "unverified_link_catalog",
+                              "limitations": ["No content fetched; expected fields are not extracted financial facts."]}, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "vc-fetch-document":
+            from .vc_documents import fetch_document
+            result = fetch_document(args.source_id, db=args.db, output_dir=args.output_dir, online=args.online,
+                                    extract=args.extract, timeout=args.timeout, max_bytes=args.max_bytes)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["download_status"] == "downloaded" and result["extraction_status"] not in {"failed", "needs_ocr"} else 1
         if args.command in {"profile", "compare", "evidence-gaps"}:
             from .ingest import write_report
             from .startup_profile import load_profile, profile_payload

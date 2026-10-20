@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VC educational terminology registry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "terms"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "terms": {"type": "array", "minItems": 1, "maxItems": 500, "items": {"$ref": "#/$defs/term"}}
+  },
+  "$defs": {
+    "unit": {"enum": ["currency", "currency_per_month", "currency_per_year", "percentage", "percentage_points", "annualized_percentage", "months", "multiple", "shares", "not_applicable"]},
+    "texts": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "formula": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["expression", "variables", "caveats"],
+      "properties": {
+        "expression": {"type": "string", "minLength": 1, "maxLength": 500},
+        "variables": {"type": "object", "minProperties": 1, "maxProperties": 20, "additionalProperties": {"$ref": "#/$defs/unit"}},
+        "caveats": {"allOf": [{"$ref": "#/$defs/texts"}], "minItems": 1}
+      }
+    },
+    "term": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "aliases", "definition", "category", "formula", "unit", "common_misinterpretations", "status"],
+      "allOf": [{"if": {"properties": {"status": {"const": "reviewed"}}}, "then": {"required": ["reviewed_by", "review_note", "reviewed_on"], "properties": {"reviewed_by": {"type": "string", "minLength": 1}, "review_note": {"type": "string", "minLength": 1}, "reviewed_on": {"type": "string", "format": "date"}}}}],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+        "label": {"type": "string", "minLength": 1},
+        "aliases": {"allOf": [{"$ref": "#/$defs/texts"}], "uniqueItems": true},
+        "definition": {"type": "string", "minLength": 1},
+        "category": {"enum": ["valuation", "financing", "ownership", "operations", "market", "fund_performance", "deal_terms", "company_stage", "clinical", "regulatory"]},
+        "formula": {"$ref": "#/$defs/formula"},
+        "unit": {"$ref": "#/$defs/unit"},
+        "common_misinterpretations": {"allOf": [{"$ref": "#/$defs/texts"}], "minItems": 1},
+        "status": {"enum": ["draft", "reviewed"]},
+        "references": {"$ref": "#/$defs/texts"},
+        "reviewed_by": {"type": ["string", "null"]},
+        "review_note": {"type": ["string", "null"]},
+        "reviewed_on": {"type": ["string", "null"], "format": "date"}
+      }
+    }
+  },
+  "$comment": "vc_engine.terms additionally enforces case-insensitive ID/label/alias uniqueness, reviewed metadata and safe formula syntax/dimensional checks. Formulas are documentation, never executed."
+}
