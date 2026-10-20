@@ -19,6 +19,13 @@
 /state/
 /reports/
 
+# Local VC inputs and downloaded public/private source material
+/data/vc/raw/*
+!/data/vc/raw/.gitkeep
+/data/vc/documents/
+/data/vc/downloads/
+/data/vc/confidential/
+
 # Local SQLite databases and sidecars, including custom runtime ledger paths
 *.sqlite
 *.sqlite3

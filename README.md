@@ -1,5 +1,10 @@
 # Medical Device RAG
 
+The separate offline [MedTech VC data foundation](docs/vc/IMPLEMENTATION_LOG.md)
+imports company, investment and public-document CSVs into a dedicated SQLite
+database: `python -m vc_engine ingest`, `stats`, or `search --query cardiology`.
+See the linked implementation record for input paths, schema and validation results.
+
 The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and multi-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
 ## Evidence-linked device profiles (Day Two Stage 03)
