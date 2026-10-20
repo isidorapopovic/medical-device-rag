@@ -16,7 +16,7 @@ implemented changes, usage, schema, validation and limitations. Scope is
 | `vc_engine/__main__.py` | `ingest`, `stats`, and `search` commands with JSON output, help and clear error exit codes. |
 | `tests/test_vc_engine.py` | Synthetic fixtures covering idempotence, relationships, money separation, nulls, invalid inputs, provenance/history, offline queries, CLI, storage isolation and input counts before deduplication. |
 | `data/vc/raw/.gitkeep` | Input-folder placeholder; no fabricated real CSVs. |
-| `.gitignore` | Excludes local VC CSVs and downloaded/confidential source folders. Existing SQLite/sidecar/report ignore rules remain active. |
+| `.gitignore` | Excludes local VC CSVs and downloaded/confidential source folders, including supplied `documents/vc/` inputs. Existing SQLite/sidecar/report ignore rules remain active. |
 | `README.md` | Link to this implementation/usage record. |
 
 No changes to `main.py`, `streamlit_app.py`, `mdr_rag/`, existing tests,
@@ -31,6 +31,7 @@ repository root (activate `.venv`, or use `.venv/Scripts/python.exe` on Windows)
 python -m vc_engine --help
 python -m vc_engine ingest
 python -m vc_engine ingest --companies path/to/companies.csv --investments path/to/investments.csv --documents path/to/documents.csv --db data/vc/medtech_vc.sqlite --report reports/vc_import_quality.json
+python -m vc_engine ingest --companies documents/vc/europe_ai_samd_50_companies.csv --investments documents/vc/europe_healthtech_vc_50_investments.csv --documents documents/vc/vc_public_real_documents.csv
 python -m vc_engine stats --db data/vc/medtech_vc.sqlite
 python -m vc_engine search --query cardiology --db data/vc/medtech_vc.sqlite
 python -m vc_engine search --country Germany --clinical-category Cardiology --investor "Fund A" --stage Seed
@@ -104,10 +105,12 @@ investment-only company gets an unknown-fields placeholder, enriched by a subseq
 company import.
 
 Numeric parsing accepts plain decimals or unambiguous comma thousands groups.
-Ranges, scientific notation, units and approximate text stay raw/unknown. Blank is
+Ranges, scientific notation and approximate text stay raw/unknown. Blank is
 null, while explicit zero remains zero. Company funding is converted from the
 explicitly USD-millions column into USD units. Other amounts need a three-letter
-currency alongside the number or the explicit round currency column. A fund check
+currency alongside the number or the explicit round currency column. That column
+also accepts explicit `USD million`, `EUR million`, or analogous three-letter
+currency plus `thousand`/`million`/`billion` and scales into currency units. A fund check
 does not inherit the round's currency; revenue does not inherit company country.
 For example, `USD 500,000` is parseable; `$500,000`, `12 million`, and a bare revenue
 `500000` are retained as raw text with unknown normalized amount. Dates require valid
@@ -136,19 +139,40 @@ Commands run and results are recorded below before the implementation commit.
 - `.venv/Scripts/python.exe -m pytest -q tests/test_vc_engine.py --basetemp reports/test-temp-vc-01`: initial 19 tests passed; pytest cache permission warning only.
 - `.venv/Scripts/python.exe -m pytest -q tests/test_vc_engine.py -p no:cacheprovider --basetemp reports/test-temp-vc-02`: 21 passed after physical-line and pre-deduplication count cases were added.
 - `.venv/Scripts/python.exe -m pytest -q tests/test_vc_engine.py -p no:cacheprovider --basetemp reports/test-temp-vc-final`: final 22 passed in 1.20 seconds, including transaction rollback and failed-database reporting.
+- `.venv/Scripts/python.exe -m pytest -q tests/test_vc_engine.py -p no:cacheprovider --basetemp reports/test-temp-vc-real-units`: 22 passed in 1.53 seconds after adding explicit currency-unit handling for the real CSVs.
 - `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-vc-regression-01`: 575 passed, 2 skipped in 355.74 seconds. This run collected the original 19 VC tests alongside all existing repository tests; the final 22-test VC run above separately covers the later additions and final importer changes.
 - `.venv/Scripts/python.exe -S -m vc_engine --help`: passed with site-packages disabled.
-- `.venv/Scripts/python.exe -S -m vc_engine ingest`: expected nonzero exit because all three real CSVs are absent; saved `reports/vc_import_quality.json` with `failed_preflight`, missing-file errors and zero rows read. No real VC database created.
+- Initial `.venv/Scripts/python.exe -S -m vc_engine ingest`: expected nonzero exit when files were absent from `data/vc/raw/`; saved a missing-input report. The real CSVs were subsequently found in `documents/vc/` during the final workspace check and successfully imported via explicit paths. The default quality report now contains successful real-data reimport results.
 - `stats` and `search --query cardiology` against the final tiny synthetic fixture: passed; 1 company, 2 investors, 3 relationships, 1 document and all 254 field-provenance records preserved after reimport. Saved a separate successful synthetic report at `reports/vc_import_quality_synthetic.json`.
 - `.venv/Scripts/python.exe -m compileall -q vc_engine`: passed.
 - `git diff --cached --check`: passed. `git check-ignore` confirmed exclusion of local VC inputs, database, reports and downloaded/confidential documents.
 
 The pre-existing untracked `docs/vc/README.txt` and task briefs are preserved and
-excluded from the implementation commit; the new implementation log is committed.
+excluded from the implementation commits; the new implementation log is committed.
+Original CSVs in `documents/vc/` are preserved locally and ignored.
 
-The supplied real-data acceptance check (50 company, 50 investment and 66 document
-input rows) remains pending those CSVs. A synthetic 50/50/66 fixture tests counting
-before deduplication; it does not stand in for validation of the real inputs.
+Real-data acceptance validation used the three supplied CSVs in `documents/vc/`,
+with site-packages disabled (`python -S`), without network or Ollama:
+
+- Exactly 50 company, 50 investment and 66 document input rows; all 166 imported,
+  zero rejected. Initial unique inserts: 99 companies, 3 investors, 50 relationships,
+  66 documents. Only one investment-company name matches the company catalog;
+  49 investment-only companies get unknown-fields placeholders without fuzzy merges.
+- Final unchanged reimport: zero inserted and zero updated entities/relationships;
+  all entity, source-row and provenance counts unchanged. There are 166 source rows
+  and 5,724 field provenance records.
+- Six reported round amounts normalize with explicit USD/EUR million units;
+  44 remain null. All 50 fund check amounts remain null. Revenue remains null for
+  every company (including the 49 placeholders); none inherits cumulative funding.
+- Quality summary: 99 unknown clinical-study URLs, 99 unknown revenue amounts,
+  99 unverified regulatory statuses, 44 missing round amounts. This includes
+  placeholders, so these counts intentionally differ from the company input count.
+- `search_companies(..., QueryFilters(keyword='cardiology'))`: 3 results offline.
+- One partial round date (`2021`) remains unparsed and preserved in provenance.
+- `reports/vc_import_quality.json`: successful unchanged reimport report.
+  `reports/vc_import_quality_normalized.json`: import after explicit-unit handling;
+  `reports/vc_import_quality_initial.json`: initial import before that handling.
+
 No source, funding, clinical evidence or regulatory claim has been independently
 verified. No Ollama, network, scraping, credentials or cloud services are used.
 Later tasks, dashboard, document extraction/indexing, enrichment, fuzzy entity

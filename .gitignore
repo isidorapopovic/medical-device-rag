@@ -25,6 +25,7 @@
 /data/vc/documents/
 /data/vc/downloads/
 /data/vc/confidential/
+/documents/vc/
 
 # Local SQLite databases and sidecars, including custom runtime ledger paths
 *.sqlite

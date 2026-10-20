@@ -143,6 +143,10 @@ def test_currency_dates_and_years():
     assert money("USD 12", "EUR") == (None, "EUR")
     assert money("$12") == (None, None)
     assert money("EUR 12 million") == (None, None)
+    assert money("8.25", "USD million") == (8_250_000, "USD")
+    assert money("27", "EUR million") == (27_000_000, "EUR")
+    assert money("0", "GBP thousand") == (0, "GBP")
+    assert money("2", "USD trillion") == (None, None)
     assert iso_date("2026-02-30") is None
     assert iso_date("2026-02") is None
     assert year("2020.0") is None

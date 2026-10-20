@@ -21,9 +21,14 @@ class ImportValidationError(ValueError):
 
 
 def money(value: str | None, explicit_currency: str | None = None) -> tuple[float | None, str | None]:
-    """No units/range inference or currency guessed from investor/company country."""
+    """Accept explicit currency units; never guess currency from geography."""
     text = clean(value)
     code = currency(explicit_currency)
+    scale = 1
+    unit = re.fullmatch(r"([A-Za-z]{3})\s+(thousand|million|billion)", clean(explicit_currency) or "", re.IGNORECASE)
+    if unit:
+        code = currency(unit[1])
+        scale = {"thousand": 1000, "million": 1_000_000, "billion": 1_000_000_000}[unit[2].lower()]
     if text:
         match = re.fullmatch(r"(?:([A-Za-z]{3})\s+)?([+-]?[\d,.]+)(?:\s+([A-Za-z]{3}))?", text)
         if match:
@@ -32,7 +37,8 @@ def money(value: str | None, explicit_currency: str | None = None) -> tuple[floa
                 return None, code
             code = embedded or code
             parsed = number(match[2])
-            return (parsed if code else None), code
+            amount = parsed * scale if parsed is not None and code else None
+            return (amount if amount is not None and abs(amount) < float("inf") else None), code
     return None, code
 
 
@@ -143,7 +149,7 @@ def normalization_issues(kind: str, raw: dict) -> list[str]:
                       "dealroom_reported_total_funding_usd_millions": number,
                       "revenue_value": lambda value: money(value)[0]},
         "investments": {"round_date": iso_date, "as_of_date": iso_date,
-                        "reported_round_currency": currency,
+                        "reported_round_currency": lambda value: money("0", value)[1],
                         "reported_round_amount": lambda value: money(value, raw["reported_round_currency"])[0],
                         "individual_fund_check_amount": lambda value: money(value)[0]},
         "source_documents": {"year": year, "observed_2026_10_16": iso_date},
