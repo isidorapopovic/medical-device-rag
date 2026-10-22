@@ -2,7 +2,7 @@
 
 Implemented on branch `vc-implmentation`, 2026-10-20. This is the single record of
 implemented changes, usage, schema, validation and limitations. Task 01 is recorded
-first, followed by Tasks 02, 03 and 04. Task 05 is not implemented.
+first, followed by Tasks 02, 03, 04 and 05. Task 05 was implemented on 2026-10-22.
 
 ## Changes
 
@@ -755,3 +755,167 @@ checks have been verified. Glossary seeds need human expert review. Company-name
 collisions can reflect legitimate history; conservative flags are not findings of
 fraud or proof of separate legal identities. Reports are research inventories,
 not investment recommendations, legal/accounting advice or verified deal analysis.
+
+## Task 05 — VC dashboard, grounded memo and evaluation (2026-10-22)
+
+### Implemented files and behavior
+
+| File | Implementation |
+| --- | --- |
+| `streamlit_app.py` | Sidebar workspace selector defaults to the existing MDR interface and opens a separate VC Research workflow. |
+| `vc_engine/dashboard.py` | Company catalog exploration/filtering, provenance/URLs/missing values, reported investments, glossary, editable startup JSON/local decks, comparisons/gaps, memo preview/download/export, manual rubric coverage charts and human-label evaluation. |
+| `vc_engine/startup_uploads.py` | Local JSON/PDF/DOCX uploads with byte caps, path rejection, SHA-256, unique folders, original bytes/manifests/extraction output, label-only draft fields and literal source/page anchors. Conflicts remain unknown. |
+| `vc_engine/memo.py` | Deterministic offline eight-section memo, source registry, literal field/quote citation audit, invalid-claim withholding, separately attributed funding amounts and unique sanitized exports. Export reaudits Markdown and JSON and withholds funding rows whose supporting claim fails. |
+| `vc_engine/scoring.py` | Optional configurable six-criterion human rubric; eligibility requires review, verification attestation, reviewer, reason and known evidence IDs. Unknowns stay null; coverage/rated-weight mean and minimum-coverage ranking guard remain explicit. |
+| `vc_engine/evaluation.py` | Independent human-label evaluation of Recall@5, Precision@5, normalized exact profile-field agreement and optional memo citation validity. Validates reviewer/date/IDs/kinds; no model-generated gold. |
+| `vc_engine/__main__.py` | Additive `memo` and `evaluate-vc` commands, optional rubric, independent DB paths, report paths and controlled errors. |
+| `eval/vc_gold_comparables.json` | Empty examples plus annotation instructions; no fabricated comparable/extraction accuracy. |
+| `tests/test_vc_research.py` | Offline synthetic three-CSV/FDA fixtures, grounding/funding/export/scoring/evaluation/upload checks and Streamlit screen/entry-point acceptance. |
+| `.gitignore` | Excludes local confidential `data/vc/uploads/`; existing report/database ignores remain active. |
+| `README.md` | Import/cache/comparison/export commands, localhost UI workflow, upload limits, human rubric example, label format and limitations. |
+| `docs/vc/IMPLEMENTATION_LOG.md` | This continuing implementation record. |
+
+No new dependencies, model/API keys or changes to MDR service/index/storage code.
+Existing CLI commands retain their defaults. The UI's **MDR** workspace remains
+the initial view; selecting **VC Research** returns before rendering MDR actions.
+
+### UI and local workflow
+
+```powershell
+python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --browser.gatherUsageStats false
+python -m vc_engine ingest
+python -m vc_engine fda-search --query echocardiography
+# A separate explicit network action, only when wanted:
+python -m vc_engine fda-search --query echocardiography --online
+python -m vc_engine memo --profile docs/vc/startup_profile.example.json
+python -m vc_engine memo --profile reports/reviewed_startup.json --scorecard reports/human_rubric.json
+python -m vc_engine evaluate-vc --labels eval/vc_gold_comparables.json --output reports/vc_evaluation.json
+python -m vc_engine evaluate-vc --labels reports/human_labels.json --memo reports/vc/<export-folder>/memo.json
+```
+
+Use the profile/reviewer command documented in README after reviewing/editing
+the example or your own extracted profile. The example is explicitly synthetic.
+The company explorer shows the actual imported catalog (50 companies in the
+supplied inputs), excluding the 49 investment-only company placeholders. It
+displays exact country/category filters, literal search, source rows and URLs,
+missing values, CSV regulatory-claim warnings, investor relationships and the
+31-term draft glossary. It never promotes a CSV statement to verified clearance.
+
+The startup view accepts editable JSON or local PDF/DOCX. Draft extraction uses
+explicit labels only; native PDF pages and DOCX/unit locators retain exact text.
+It does not guess from unlabeled narrative. Multiple different labeled values
+leave the field null. Sources/quotes remain inspectable, and edits require
+re-evaluation. Draft JSON survives navigation between VC views, and editing it
+clears the review checkbox. Human review metadata is bound to the profile fingerprint.
+PDF/DOCX uploads are capped at 20 MiB, JSON at 2 MiB, and extracted draft profiles
+at 100 units / one million characters / 100 field anchors. The shared parser
+also caps expanded archive size, text, pages and units. No OCR is requested.
+
+Uploads are retained in ignored unique `data/vc/uploads/upload-<sha>-<unique>/`
+folders with `original.<suffix>`, `manifest.json`, `profile.json` and parser JSON
+when applicable. Path components are rejected, original filenames do not become
+storage paths, and duplicate uploads do not overwrite. Loading another upload
+clears the previous evaluated profile/bundle and review checkbox. Deck contents
+are not printed to console, sent to third parties, downloaded or indexed in MDR.
+The existing app has no authentication or confidential-storage encryption: keep
+the server on localhost. No remote model, public-paper fetch or Ollama call is
+used in these VC screens.
+
+### Evidence contracts and artifacts
+
+Memos contain the eight requested sections, explicit `startup_claim`,
+`public_source_fact`, `model_inference` and `analyst_assessment` tags, and
+unknown/unverified statuses where evidence is absent. A source registry retains
+CSV filename/row/hash/raw fields, cached FDA identifier/official URL/check date,
+and startup source text/page/unit. Deck-derived overview fields cite both the
+structured declaration and original literal page/unit anchors. Unknown IDs,
+wrong fields or nonmatching quotes remove citations and withhold the associated
+claim as `needs_review`. Export repeats this audit for both JSON and Markdown;
+invalid supporting investment claims also remove their funding-table rows.
+Text is escaped for HTML when generating Markdown.
+
+Funding tables preserve round total, individual check and company cumulative
+funding as distinct amount objects with currency, amount type, source URL,
+as-of date and reported evidence status. Undisclosed checks remain null.
+The matcher supplies lexical scores, coverage, per-field provenance and excluded
+candidate explanations. FDA and company results are presented separately;
+negative/unknown cached decisions do not become clearance or predicate claims.
+
+Each export creates a new exclusive folder:
+
+```text
+reports/vc/profile-<safe-name>-<fingerprint>-<unique-id>/
+  memo.md
+  memo.json
+  comparables.json
+  scorecard.json
+  evidence_gaps.json
+  startup_profile.json
+```
+
+Scoring is disabled by default. Six weights match the brief and can be replaced
+by nonnegative weights summing to one. Every numeric criterion requires explicit
+human review/verification, a named reviewer, reason and known evidence IDs;
+missing/unverified ratings stay null. The UI shows human-rated weight/total,
+coverage, rated-only mean, criterion table and unrated-weight chart. The separate
+screening score/ranking flag is withheld below default 75% coverage; the guard
+can be configured from 50% to 100%. An explicitly reviewed zero is a valid score;
+an unknown criterion is never silently zero or neutral. Weights and attestations
+are subjective analyst inputs, not a validated predictive model.
+
+Evaluation reads an independently human-annotated local JSON file, never model
+outputs as ground truth. Actual company IDs/FDA K-numbers, candidate kind,
+reviewer, ISO date and annotation notes are required for each example. Optional
+`expected_fields` supplies independently checked literal profile values/nulls.
+Precision@5 has denominator five; recall excludes cases with zero relevant
+labels as undefined. Field accuracy is normalized exact agreement over labeled
+fields only. `--memo` adds a structural/literal citation audit. Empty examples
+yield `awaiting_human_annotations` and null relevance/extraction metrics; no
+accuracy is presented as measured before annotation. Collect at least ten
+independent profiles for the planned human benchmark and freeze the corpus.
+
+### Validation and measured local output
+
+- Focused initial integration: `.venv/Scripts/python.exe -m pytest -q tests/test_vc_research.py tests/test_vc_engine.py tests/test_fda_regulatory.py tests/test_startup_comparables.py tests/test_vc_investments_terms.py -p no:cacheprovider --basetemp reports/test-temp-vc-05-focused --tb=short`: 162 passed in 11.70 seconds (40 initial Task 05 cases).
+- Reviewed focused integration: `.venv/Scripts/python.exe -m pytest -q tests/test_vc_research.py tests/test_vc_engine.py tests/test_fda_regulatory.py tests/test_startup_comparables.py tests/test_vc_investments_terms.py -p no:cacheprovider --basetemp reports/test-temp-vc-05-final-focused --tb=short`: 169 passed in 39.15 seconds (47 Task 05 cases at that point).
+- Final focused integration: `.venv/Scripts/python.exe -m pytest -q tests/test_vc_research.py tests/test_vc_engine.py tests/test_fda_regulatory.py tests/test_startup_comparables.py tests/test_vc_investments_terms.py -p no:cacheprovider --basetemp reports/test-temp-vc-05-final --tb=short`: 171 passed in 30.90 seconds (49 final Task 05 cases).
+- Full regression: `.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider --basetemp reports/test-temp-vc-05-regression --tb=short`: 718 passed, 2 skipped. This run collected the initial 40 Task 05 cases; the final focused checks cover added cases and final draft-state/citation/input-validation refinements.
+- `.venv/Scripts/python.exe -m compileall -q vc_engine` and `git diff --check`: passed.
+
+The test runs reported one Windows certificate-store warning from installed SSL
+initialization; all checks passed and no certificate validation was disabled.
+
+An offline smoke reimported all supplied files (50 company, 50 investment and
+66 document rows) into a separate ignored `reports/vc_05_smoke.sqlite`, used a
+clearly synthetic ultrasound startup and the preexisting three-record FDA cache,
+and exported a new bundle. It returned two company candidates and three cached
+FDA records, with 28/28 valid literal citations, no withheld claims and zero
+human-rated rubric coverage. No network or Ollama was used; `socket.create_connection`
+was blocked during this smoke. Cache records were not reverified online.
+The earlier synthetic CT example produced 23/23 valid literal citations, two
+company candidates and no eligible cached FDA candidate; it did not fill the gap
+with an invented FDA identifier. The empty evaluation template returned null
+metrics. Local artifacts are in ignored `reports/vc/`, `vc_05_smoke_result.json`,
+`vc_05_smoke_import.json` and `vc_05_evaluation.json`.
+
+Screenshots were not feasible: the browser/computer tool reported no enabled
+browsers or native apps. Streamlit's AppTest exercises explorer filters,
+startup evaluation, memo generation, disabled/unrated scoring, evaluation charts,
+invalid-input recovery and switching from the default MDR entry point.
+
+### Candid limitations
+
+This task implements the deterministic offline path; optional LLM narrative
+generation is intentionally absent. The workflow therefore does not depend on
+Ollama availability. Label-only extraction loses narrative/complex-layout recall
+and can capture a labeled competitor; review every field. Scans require a
+different explicitly configured extraction path. Quote membership/source-ID
+checks establish provenance, not semantic entailment, source authenticity,
+clinical equivalence, current clearance, financial verification or completeness.
+Source snapshots and exports may contain confidential startup text and must stay
+local. Lexical matching and bounded caches can omit relevant companies/devices;
+the upstream comparable report is capped at 100 candidates before per-kind memo
+selection. Synthetic fixtures/metric calculations do not measure real-deck or
+real-world retrieval accuracy. No genuine human benchmark labels have been
+collected, no clinical/financial claims independently verified, and no investment
+prediction or recommendation is made.

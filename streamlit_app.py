@@ -169,6 +169,11 @@ def list_documents(kind: str) -> list[Path]:
 
 def main() -> None:
     st.set_page_config(page_title="Medical Device RAG", page_icon="📄", layout="wide")
+    workspace = st.sidebar.selectbox("Workspace", ["MDR", "VC Research"], key="workspace")
+    if workspace == "VC Research":
+        from vc_engine.dashboard import render_vc_research
+        render_vc_research()
+        return
     st.title("Medical Device RAG")
     st.caption("Ask questions about your saved documents and inspect their cited source passages.")
     st.info(

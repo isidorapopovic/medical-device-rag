@@ -99,8 +99,41 @@ def main(argv: list[str] | None = None) -> int:
     fetch.add_argument("--extract", action="store_true", help="Explicit local PDF/DOCX/TXT extraction, no OCR or indexing")
     fetch.add_argument("--timeout", type=float, default=15)
     fetch.add_argument("--max-bytes", type=int, default=20 * 1024 * 1024)
+    memo_command = commands.add_parser("memo", help="Export deterministic offline memo/comparables/scorecard bundle")
+    memo_command.add_argument("--profile", type=Path, required=True)
+    memo_command.add_argument("--output-root", type=Path, default=Path(__file__).resolve().parent.parent / "reports/vc")
+    memo_command.add_argument("--scorecard", type=Path, help="Explicit human-reviewed rubric JSON; absent means disabled")
+    memo_command.add_argument("--top-k", type=int, default=5)
+    evaluation_command = commands.add_parser("evaluate-vc", help="Evaluate independent human comparable/field labels; no fabricated gold")
+    evaluation_command.add_argument("--labels", type=Path, default=Path(__file__).resolve().parent.parent / "eval/vc_gold_comparables.json")
+    evaluation_command.add_argument("--memo", type=Path, help="Optional memo JSON for structural citation validity")
+    evaluation_command.add_argument("--output", type=Path)
+    for command in (memo_command, evaluation_command):
+        command.add_argument("--db", type=Path, default=DEFAULT_DB)
+        command.add_argument("--fda-db", type=Path, default=DEFAULT_FDA_DB)
     args = parser.parse_args(argv)
     try:
+        if args.command == "memo":
+            from .memo import build_research, export_research
+            from .startup_profile import load_profile
+            config = json.loads(args.scorecard.read_text(encoding="utf-8-sig")) if args.scorecard else None
+            bundle = build_research(load_profile(args.profile), db=args.db, fda_db=args.fda_db, top_k=args.top_k,
+                                    scoring_config=config, scoring_enabled=bool(args.scorecard))
+            destination = export_research(bundle, root=args.output_root)
+            print(json.dumps({"directory": str(destination), "citation_audit": bundle["memo"]["citation_audit"],
+                              "profile_review_status": bundle["memo"]["profile_review_status"], "coverage": bundle["scorecard"]["coverage"]}, indent=2))
+            return 0
+        if args.command == "evaluate-vc":
+            from .evaluation import evaluate_file
+            result = evaluate_file(args.labels, db=args.db, fda_db=args.fda_db,
+                                   memo=json.loads(args.memo.read_text(encoding="utf-8-sig")) if args.memo else None)
+            if args.output:
+                if args.output.suffix.lower() != ".json" or args.output.resolve() in {path.resolve() for path in (args.labels, args.db, args.fda_db, *([args.memo] if args.memo else []))}:
+                    raise ValueError("Evaluation output must be a separate .json report, not an input/database")
+                from .ingest import write_report
+                write_report(args.output, result)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         if args.command == "terms":
             from .terms import DISCLAIMER, load_terms, lookup_term, search_terms
             if args.term_action == "show":

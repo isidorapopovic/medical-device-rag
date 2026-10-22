@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "instructions": [
+    "Examples are intentionally empty. Collect at least 10 independently human-annotated profiles; never copy model outputs as ground truth.",
+    "Each example needs id, structured profile, relevant_ids (actual company IDs or FDA K-numbers), candidate_kind (all/company/fda_510k_record), reviewed_by, reviewed_on (YYYY-MM-DD), and annotation_notes.",
+    "Optionally add expected_fields mapping profile field names to independently human-checked literal strings or null for simple extraction-field accuracy.",
+    "Freeze the local company/FDA corpus and document relevance criteria before evaluation. Keep private profile/annotation files local.",
+    "An explicit empty relevant_ids list is allowed for a human-reviewed negative case; recall is undefined, not a fabricated zero or perfect score.",
+    "Citation validity is a structural/quote check, not proof of semantic entailment or clinical equivalence."
+  ],
+  "examples": []
+}

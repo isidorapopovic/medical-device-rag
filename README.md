@@ -17,6 +17,116 @@ separate round/check/cumulative amounts; `vc-documents` reads the unverified lin
 catalog. Full document downloads require the separate `vc-fetch-document --online`
 command. See the implementation record for filters, review rules and limits.
 
+## Local VC Research dashboard and memos
+
+Run `python -m streamlit run streamlit_app.py --server.address 127.0.0.1 --browser.gatherUsageStats false`. The sidebar **Workspace** starts
+with **MDR**; choose **VC Research** for company exploration, startup comparison,
+research memos and evaluation. This app has no authentication: keep it on
+localhost, especially with confidential decks. VC views need no API keys,
+network access or running Ollama. The existing MDR workflow keeps its own local
+model requirements.
+
+From the repository root, activate the existing environment and follow:
+
+```powershell
+# Copy your three CSVs into data/vc/raw/ before importing:
+python -m vc_engine ingest
+# Offline cache search; a missing cache is an explicit evidence gap:
+python -m vc_engine fda-search --query echocardiography
+# Optional, separate official API fetch (network only when explicitly requested):
+python -m vc_engine fda-search --query echocardiography --online
+# Review/edit the synthetic example; replace it with your own local startup JSON:
+python -m vc_engine profile --input docs/vc/startup_profile.example.json --reviewer "Your name" --output reports/reviewed_startup.json
+python -m vc_engine compare --profile reports/reviewed_startup.json --output reports/startup_comparables.json
+python -m vc_engine memo --profile reports/reviewed_startup.json
+# Empty gold template gives null metrics until independent human labels exist:
+python -m vc_engine evaluate-vc --labels eval/vc_gold_comparables.json --output reports/vc_evaluation.json
+```
+
+The **Company explorer** limits browsing to the imported company catalog (50 in
+the supplied data), excluding investment-only placeholders. Details show raw
+source rows/URLs, missing values, unverified regulatory claims, reported investor
+relationships and the draft glossary. The **Startup evaluator** accepts editable
+JSON and local PDF/DOCX decks. Deck extraction recognizes explicit labels such
+as `Company name:`, `Intended use:` and `Input modality:`; it preserves literal
+quotes and physical PDF pages. Unlabeled/conflicting values stay unknown. Review
+the extracted JSON and evaluate again after edits. See the
+[profile example](docs/vc/startup_profile.example.json) for supported fields.
+
+Uploads stay under ignored `data/vc/uploads/` in unique folders with original
+bytes, SHA-256, manifest, draft profile and parser output. PDF/DOCX uploads are
+capped at 20 MiB, JSON at 2 MiB; no OCR, remote model, automatic document download
+or MDR indexing is performed. Draft profile extraction considers at most 100
+units and one million characters; the shared parser has additional resource
+limits. Scans, complex layouts, competitor context and unlabeled narrative need
+manual review. DOCX unit locators do not claim physical page numbers.
+
+The **Research memo** renders eight evidence-linked sections and exports
+Markdown/JSON plus comparables, evidence gaps, profile and scorecard to a new
+`reports/vc/profile-<safe-name>-<fingerprint>-<unique-id>/` folder. Repeated exports
+preserve older folders. Startup declarations, public source claims, heuristic
+inferences and analyst assessments have separate tags. Unknown/invented source
+IDs or nonmatching quotes withhold the associated claim as `needs_review`.
+Funding tables preserve separate round/check/cumulative amounts, currency,
+amount type, source URL and observation date; undisclosed checks remain null.
+Citation checking establishes literal provenance, not semantic truth or
+independent verification. Cached FDA records with negative/unknown decisions
+do not establish clearance; device similarity does not establish equivalence.
+
+Scoring is optional and disabled by default. The six subjective default weights
+are regulatory feasibility 20%, clinical evidence 20%, differentiation 20%,
+commercial potential 15%, financial viability 15% and team/execution 10%.
+Enable the manual rubric in the UI, or pass `memo --scorecard <local-rubric.json>`.
+Example rating structure (the evidence ID must be replaced with a real ID from
+the memo's `sources`; it is deliberately invalid as written):
+
+```json
+{
+  "minimum_coverage": 0.75,
+  "ratings": {
+    "regulatory_feasibility": {
+      "score": 3,
+      "reason": "Your documented human assessment",
+      "evidence_ids": ["REPLACE_WITH_REVIEWED_SOURCE_ID"],
+      "confidence": "low",
+      "missing_inputs": [],
+      "reviewed_by_human": true,
+      "reviewer": "Your name",
+      "evidence_verified": true
+    }
+  }
+}
+```
+
+Every numeric rating needs a named human reviewer, verification attestation,
+reason and known source IDs. Missing/unverified criteria remain null and reduce
+coverage. The mean uses only rated weights; a separate screening score/ranking
+guard requires at least 75% coverage by default (configurable from 50% to 100%).
+The UI shows coverage, unrated weight and withheld scores. Optional `weights`
+must supply all six categories, sum to one and remain nonnegative. Categories
+are `regulatory_feasibility`, `clinical_evidence_quality`,
+`technology_differentiation`, `commercial_potential`,
+`business_financial_viability`, `team_execution`. These are manual screening
+judgments, never trained forecasts or investment-success probabilities.
+
+For evaluation, copy the [empty annotation template](eval/vc_gold_comparables.json)
+to an ignored local folder. Collect independent human relevance judgments
+(recommended: at least 10 profiles), freeze the local corpus and record the
+reviewer/date/relevance criteria. Each example contains `id`, embedded `profile`,
+`relevant_ids` (actual company IDs or FDA K-numbers), `candidate_kind`
+(`all`, `company`, `fda_510k_record`), `reviewed_by`, `reviewed_on` and
+`annotation_notes`. Optional `expected_fields` maps independently checked profile
+fields to literal strings/null. Never use model outputs as gold labels.
+`evaluate-vc --memo <export-folder>/memo.json` additionally audits citations.
+Precision@5 divides hits by five even with fewer results; Recall@5 is undefined
+for a human-labeled empty relevant set. Extraction-field accuracy measures
+normalized exact agreement only on labeled fields. Empty labels produce null
+metrics; synthetic test outcomes are not real-world accuracy estimates.
+
+Focused offline checks: `python -m pytest -q tests/test_vc_research.py`.
+See the [implementation log](docs/vc/IMPLEMENTATION_LOG.md) for validation results
+and limitations across all five VC tasks.
+
 The supported application uses **Ollama locally** for embeddings and structured language-model tasks. The supported entry points are `main.py` (CLI) and `streamlit_app.py` (document upload, indexing, preview and multi-turn Q&A); shared application code is in `mdr_rag/`. These workflows do not require OpenAI or Gemini API keys.
 
 ## Evidence-linked device profiles (Day Two Stage 03)
